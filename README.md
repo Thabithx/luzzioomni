@@ -1,14 +1,6 @@
 # Luzzio E-Commerce Platform
 
-## 🚀 Setup Guide for Team Members
-
-### 1. Clone Repository
-```bash
-git clone https://github.com/Thabithx/luzzioomni.git
-cd luzzioomni
-```
-
-### 2. Install Dependencies
+ Install Dependencies
 ```bash
 # Root dependencies
 npm install
@@ -38,5 +30,3 @@ From the root directory, run:
 ```bash
 npm run dev
 ```
-- **Backend API:** http://localhost:5001
-- **Frontend App:** http://localhost:5173
