@@ -1,9 +1,6 @@
 # Luzzio E-Commerce Platform
 
-## 🚀 Setup & Development Workflow Guide
-
-### 1. Clone & Setup Repository
-**Reason:** Download the project repository from GitHub and install all required packages for root, server, and client environments.
+### 1. Clone & Setup 
 
 ```bash
 git clone https://github.com/Thabithx/luzzioomni.git
@@ -44,8 +41,7 @@ npm run dev
 
 ---
 
-### 4. Git Workflow for Team Members
-**Reason:** Ensure team members sync latest remote updates before making changes, stage their assigned work, record changes with a clear commit message, and push updates to the shared repository.
+### 4. to push
 
 ```bash
 # Pull latest updates from main before making/pushing changes
