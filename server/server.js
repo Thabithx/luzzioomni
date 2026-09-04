@@ -68,8 +68,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 const orderRoutes = require('./routes/orderRoutes');
+const financeRoutes = require('./routes/financeRoutes');
 
 app.use('/api/orders', orderRoutes);
+app.use('/api/finance', financeRoutes);
 
 // Base route
 app.get('/', (req, res) => {
