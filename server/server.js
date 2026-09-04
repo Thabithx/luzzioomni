@@ -66,6 +66,11 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Routes
+const orderRoutes = require('./routes/orderRoutes');
+
+app.use('/api/orders', orderRoutes);
+
 // Base route
 app.get('/', (req, res) => {
    res.send('Luzzio API is running...');
