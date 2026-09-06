@@ -1,0 +1,147 @@
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { useAuth } from '../context/AuthContext';
+import Meta from '../components/ui/Meta';
+
+export function Register() {
+   const [formData, setFormData] = useState({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: ''
+   });
+   const [loading, setLoading] = useState(false);
+   const [error, setError] = useState('');
+   const navigate = useNavigate();
+   const { register } = useAuth();
+
+   const handleChange = (e) => {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+   };
+
+   const handleSubmit = async (e) => {
+      e.preventDefault();
+      if (formData.password !== formData.confirmPassword) {
+         return setError('Passwords do not match');
+      }
+
+      setLoading(true);
+      setError('');
+
+      const result = await register(
+         `${formData.firstName} ${formData.lastName}`,
+         formData.email,
+         formData.password
+      );
+
+      if (result.success) {
+         navigate('/profile');
+      } else {
+         setError(result.message);
+         setLoading(false);
+      }
+   };
+
+   return (
+      <div className="min-h-screen bg-white flex flex-col lg:flex-row">
+         <Meta title="Client Registration | Luzzio" />
+
+         {/* FORM SECTION */}
+         <div className="flex-1 flex items-center justify-center p-10 lg:p-20 order-2 lg:order-1">
+            <div className="w-full max-w-sm space-y-12">
+               <div className="space-y-4">
+                  <p className="text-small-brand text-gray-400">Client Onboarding</p>
+                  <h1 className="text-5xl font-black uppercase tracking-tighter leading-none">Registration</h1>
+                  <p className="text-[11px] text-gray-500 tracking-widest font-medium">Create a profile for exclusive access.</p>
+               </div>
+
+               {error && (
+                  <div className="p-4 border border-black text-[10px] font-black uppercase tracking-widest bg-brand-grey text-black">
+                     Error: {error}
+                  </div>
+               )}
+
+               <form className="space-y-6" onSubmit={handleSubmit}>
+                  <div className="grid grid-cols-2 gap-4">
+                     <Input
+                        name="firstName"
+                        placeholder="First Name"
+                        value={formData.firstName}
+                        onChange={handleChange}
+                        required
+                        className="bg-transparent border-t-0 border-x-0 border-b border-black focus:border-black rounded-none transition-all px-1 py-4"
+                     />
+                     <Input
+                        name="lastName"
+                        placeholder="Last Name"
+                        value={formData.lastName}
+                        onChange={handleChange}
+                        required
+                        className="bg-transparent border-t-0 border-x-0 border-b border-black focus:border-black rounded-none transition-all px-1 py-4"
+                     />
+                  </div>
+                  <Input
+                     name="email"
+                     type="email"
+                     placeholder="Email Address"
+                     value={formData.email}
+                     onChange={handleChange}
+                     required
+                     className="bg-transparent border-t-0 border-x-0 border-b border-black focus:border-black rounded-none transition-all px-1 py-4"
+                  />
+                  <Input
+                     name="password"
+                     type="password"
+                     placeholder="Password"
+                     value={formData.password}
+                     onChange={handleChange}
+                     required
+                     className="bg-transparent border-t-0 border-x-0 border-b border-black focus:border-black rounded-none transition-all px-1 py-4"
+                  />
+                  <Input
+                     name="confirmPassword"
+                     type="password"
+                     placeholder="Confirm Password"
+                     value={formData.confirmPassword}
+                     onChange={handleChange}
+                     required
+                     className="bg-transparent border-t-0 border-x-0 border-b border-black focus:border-black rounded-none transition-all px-1 py-4"
+                  />
+
+                  <div className="text-[9px] text-gray-400 leading-relaxed tracking-widest font-medium">
+                     By initiating registration, you accept our <button className="text-black border-b border-black/20">Protocols</button> and <button className="text-black border-b border-black/20">Privacy Standards</button>.
+                  </div>
+
+                  <button className="btn-brand w-full py-5" type="submit" disabled={loading}>
+                     {loading ? 'Initializing Profile...' : 'Create Client Profile'}
+                  </button>
+               </form>
+
+               <div className="pt-10 border-t border-black text-center">
+                  <p className="text-small-brand text-gray-400 mb-6">Existing Member?</p>
+                  <Link to="/login" className="inline-block text-small-brand border-b border-black pb-1 hover:opacity-50 transition-opacity">
+                     Sign In To Archive
+                  </Link>
+               </div>
+            </div>
+         </div>
+
+         {/* IMAGE SECTION */}
+         <div className="hidden lg:block w-1/2 relative bg-brand-grey overflow-hidden order-1 lg:order-2">
+            <img
+               src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=1920&auto=format&fit=crop"
+               alt="Luzzio Campaign"
+               className="absolute inset-0 w-full h-full object-cover grayscale-[30%] hover:grayscale-0 transition-all duration-1000"
+            />
+            <div className="absolute inset-0 bg-black/5" />
+            <div className="absolute top-10 right-10 p-10 border border-white/20 backdrop-blur-sm bg-black/10 text-right">
+               <p className="text-white text-small-brand">Luzzio Membership</p>
+               <h2 className="text-white text-3xl font-black uppercase tracking-tighter mt-2">Elite Synchronized Access</h2>
+            </div>
+         </div>
+      </div>
+   );
+}
