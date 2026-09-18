@@ -1,11 +1,8 @@
 import React from 'react';
+import AdminFinance from './pages/admin/AdminFinance';
 
 function App() {
-  return (
-    <div >
-      <h1>luzzio nigga</h1>
-    </div>
-  )
+  return <AdminFinance />;
 }
 
 export default App;
