@@ -38,7 +38,7 @@ const orderSchema = new mongoose.Schema({
    paymentMethod: {
       type: String,
       required: true,
-      default: 'Stripe'
+      default: 'COD'
    },
    stripeSessionId: {
       type: String
