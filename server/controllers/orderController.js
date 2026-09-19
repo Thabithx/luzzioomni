@@ -31,7 +31,7 @@ exports.createOrder = async (req, res) => {
          return res.status(400).json({ success: false, message: 'No order items' });
       }
 
-      // 1. Efficient Email & Name selection (No redundant DB trips)
+      // 1. Efficient Email & Name selection 
       const orderEmail = (req.user ? req.user.email : (email || '')).trim().toLowerCase();
 
       const firstName = shippingAddress?.firstName || '';
@@ -61,7 +61,7 @@ exports.createOrder = async (req, res) => {
 
 
 
-      // 4. Prepare PayHere or Koko parameters if needed (Calculated locally, near-instant)
+ 
       let payhereParams = null;
       let kokoParams = null;
 
@@ -134,7 +134,7 @@ exports.createOrder = async (req, res) => {
             sign.update(dataString);
             const signature = sign.sign(privateKey, 'base64');
 
-            // Phone Sanitization: Ensure it starts with 0 and has 10 digits
+
             let kokoPhone = (shippingAddress.phone || '').replace(/\D/g, '');
             if (kokoPhone.length === 9) kokoPhone = '0' + kokoPhone;
             if (!kokoPhone) kokoPhone = shippingAddress.phone || '';
@@ -165,7 +165,7 @@ exports.createOrder = async (req, res) => {
          }
       }
 
-      // 4. IMMEDIATE RESPONSE DISPATCH (Background everything else)
+      
       res.status(201).json({
          success: true,
          data: createdOrder,
@@ -175,7 +175,7 @@ exports.createOrder = async (req, res) => {
 
       console.log(`[ORDER PROTOCOL DISPATCHED] Order ${createdOrder._id} created with draft status. Awaiting payment.`);
 
-      // 5. If COD, process centralized inventory deduction and revenue logging (THABITH SRIHARAN)
+      // 5. If COD, process centralized inventory deduction and revenue logging
       if (paymentMethod === 'COD' || paymentMethod === 'Cash on Delivery') {
          try {
             // Deduct stock via centralized inventory ledger (creates InventoryTransaction records)
@@ -419,7 +419,7 @@ exports.syncMyOrders = async (req, res) => {
 // @desc    Get all orders
 // @route   GET /api/orders
 // @access  Private/Admin
-// THABITH SRIHARAN: Customer order management logic.
+//Customer order management logic.
 // Handles creation, updates, cancellation and order status transitions.
 // Supports both ONLINE and POS order channels.
 exports.getOrders = async (req, res) => {

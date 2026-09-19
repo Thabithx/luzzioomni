@@ -1,4 +1,3 @@
-// THABITH SRIHARAN
 // Supplier / Vendor management controller.
 // Handles creation, updates, and maintenance of procurement suppliers.
 
