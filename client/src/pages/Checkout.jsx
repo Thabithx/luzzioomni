@@ -62,9 +62,33 @@ export function Checkout() {
 
    const [paymentMethod, setPaymentMethod] = useState('COD');
    const [showMobileSummary, setShowMobileSummary] = useState(false);
+   const [errors, setErrors] = useState({});
+
+   const SL_PHONE_REGEX = /^0[0-9]{9}$/;
+
+   const validate = () => {
+      const newErrors = {};
+      if (cart.length === 0) newErrors.cart = 'Your cart is empty. Add items before checking out.';
+      if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Enter a valid email address.';
+      if (!formData.firstName.trim()) newErrors.firstName = 'First name is required.';
+      if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required.';
+      if (!formData.address.trim() || formData.address.trim().length < 5) newErrors.address = 'Enter a full physical address.';
+      if (!formData.city) newErrors.city = 'Please select your city.';
+      if (!formData.phone || !SL_PHONE_REGEX.test(formData.phone.trim())) newErrors.phone = 'Enter a valid 10-digit Sri Lankan phone number (e.g. 0771234567).';
+      if (formData.phone2 && !SL_PHONE_REGEX.test(formData.phone2.trim())) newErrors.phone2 = 'Secondary phone must also be a valid 10-digit number.';
+      return newErrors;
+   };
+
 
    const handleSubmit = async (e) => {
       e.preventDefault();
+      const validationErrors = validate();
+      if (Object.keys(validationErrors).length > 0) {
+         setErrors(validationErrors);
+         window.scrollTo({ top: 0, behavior: 'smooth' });
+         return;
+      }
+      setErrors({});
       setLoading(true);
       try {
          const orderItems = cart.map(item => ({
@@ -281,37 +305,64 @@ export function Checkout() {
 
                {/* LEFT: CHECKOUT SECTIONS */}
                <div className="flex-1 space-y-20 md:space-y-24">
+
+                  {/* Cart empty error */}
+                  {errors.cart && (
+                     <div className="bg-red-50 border border-red-500 text-red-700 text-xs font-bold px-4 py-3 uppercase tracking-widest">
+                        {errors.cart}
+                     </div>
+                  )}
+
                   <section className="space-y-8 md:space-y-10">
                      <p className="text-small-brand font-black pb-4 border-b border-black">Client Information</p>
                      <div className="grid grid-cols-1 gap-6">
-                        <Input
-                           name="email"
-                           type="email"
-                           placeholder="Email Address"
-                           value={formData.email}
-                           onChange={handleInputChange}
-                           required
-                        />
+                        <div>
+                           <Input
+                              name="email"
+                              type="email"
+                              placeholder="Email Address"
+                              value={formData.email}
+                              onChange={handleInputChange}
+                           />
+                           {errors.email && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.email}</p>}
+                        </div>
                      </div>
                   </section>
 
                   <section className="space-y-8 md:space-y-10">
                      <p className="text-small-brand font-black pb-4 border-b border-black">Shipping Logistics</p>
                      <div className="grid grid-cols-2 gap-6">
-                        <Input name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleInputChange} required />
-                        <Input name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleInputChange} required />
-                        <Input name="address" placeholder="Physical Address" className="col-span-2" value={formData.address} onChange={handleInputChange} required />
-                        <SearchableSelect
-                           name="city"
-                           placeholder="Select City / Area"
-                           options={SRI_LANKA_LOCATIONS}
-                           value={formData.city}
-                           onChange={handleInputChange}
-                           required
-                           className="col-span-2"
-                        />
-                        <Input name="phone" placeholder="Phone Number" value={formData.phone} onChange={handleInputChange} required />
-                        <Input name="phone2" placeholder="Secondary Phone (Optional)" value={formData.phone2} onChange={handleInputChange} />
+                        <div>
+                           <Input name="firstName" placeholder="First Name" value={formData.firstName} onChange={handleInputChange} />
+                           {errors.firstName && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.firstName}</p>}
+                        </div>
+                        <div>
+                           <Input name="lastName" placeholder="Last Name" value={formData.lastName} onChange={handleInputChange} />
+                           {errors.lastName && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.lastName}</p>}
+                        </div>
+                        <div className="col-span-2">
+                           <Input name="address" placeholder="Physical Address" value={formData.address} onChange={handleInputChange} />
+                           {errors.address && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.address}</p>}
+                        </div>
+                        <div className="col-span-2">
+                           <SearchableSelect
+                              name="city"
+                              placeholder="Select City / Area"
+                              options={SRI_LANKA_LOCATIONS}
+                              value={formData.city}
+                              onChange={handleInputChange}
+                              className="w-full"
+                           />
+                           {errors.city && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.city}</p>}
+                        </div>
+                        <div>
+                           <Input name="phone" placeholder="Phone (e.g. 0771234567)" value={formData.phone} onChange={handleInputChange} />
+                           {errors.phone && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.phone}</p>}
+                        </div>
+                        <div>
+                           <Input name="phone2" placeholder="Secondary Phone (Optional)" value={formData.phone2} onChange={handleInputChange} />
+                           {errors.phone2 && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.phone2}</p>}
+                        </div>
                      </div>
                   </section>
 

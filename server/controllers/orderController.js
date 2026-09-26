@@ -50,7 +50,6 @@ exports.createOrder = async (req, res) => {
       });
 
       console.time('DB_OPERATIONS');
-      // 2. Parallelize DB Save and Cart Clear for maximum throughput
       const saveTasks = [order.save()];
       if (req.user) {
          saveTasks.push(Cart.findOneAndUpdate({ user: req.user.id }, { items: [] }));
@@ -564,9 +563,7 @@ exports.batchUpdateOrderStatus = async (req, res) => {
                const weight = (weights && weights[order._id]) || 1;
                const { createFadarParcelInternal } = require('./fadarController');
 
-               // We need an internal version or just refactor fadarController to be more reusable
-               // For now, let's keep it simple and just update status if Fadar fails or skip complex logic in batch
-               // Actually, it's better to support it.
+               
                const fadarResult = await triggerFadarInternal(order, weight);
                if (fadarResult.success) {
                   order.fadar_order_id = fadarResult.fadar_order_id;
@@ -619,8 +616,7 @@ exports.batchUpdateOrderStatus = async (req, res) => {
    }
 };
 
-// Helper to trigger Fadar without a req/res cycle
-// Helper to trigger Fadar without a req/res cycle
+
 async function triggerFadarInternal(order, weight) {
    const axios = require('axios');
    const FormData = require('form-data');

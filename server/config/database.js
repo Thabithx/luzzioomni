@@ -25,7 +25,7 @@ async function connectDB() {
          serverSelectionTimeoutMS: 10000,
          connectTimeoutMS: 10000,
       });
-      console.log('✅  Connected to MongoDB successfully');
+      console.log('Connected to MongoDB successfully');
    } catch (err) {
       console.error('MongoDB connection failed:', err.message);
       devMode = true;

@@ -1,6 +1,4 @@
-// BIHANDU
-// Return & Exchange management system replacing legacy Excel-based workflow.
-// Fully linked to original order records with automated stock restock / damage audit handling.
+
 
 const ReturnRequest = require('../models/ReturnRequest');
 const Order = require('../models/Order');

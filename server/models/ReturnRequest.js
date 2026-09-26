@@ -1,6 +1,3 @@
-// BIHANDU
-// Return and Exchange workflow schema linked to original orders.
-// Handles status transitions and restock vs damaged inventory logic.
 
 const mongoose = require('mongoose');
 

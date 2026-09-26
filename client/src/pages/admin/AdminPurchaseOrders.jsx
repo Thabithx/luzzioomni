@@ -31,6 +31,10 @@ export default function AdminPurchaseOrders() {
    const [receiveItems, setReceiveItems] = useState([]);
    const [submitting, setSubmitting] = useState(false);
 
+   // Form Errors
+   const [createErrors, setCreateErrors] = useState({});
+   const [receiveErrors, setReceiveErrors] = useState('');
+
    useEffect(() => {
       fetchPOs();
       fetchSuppliersAndProducts();
@@ -79,12 +83,50 @@ export default function AdminPurchaseOrders() {
       setPoForm({ ...poForm, items: updated });
    };
 
+   const validateCreatePO = () => {
+      const errs = {};
+      if (!poForm.supplierId) errs.supplierId = 'Please select a supplier.';
+      if (!poForm.items || poForm.items.length === 0) {
+         errs.items = 'At least one order item is required.';
+      } else {
+         const itemErrs = [];
+         const seenCombos = new Set();
+
+         poForm.items.forEach((item, index) => {
+            const err = {};
+            if (!item.productId) err.productId = 'Select product';
+            const qty = Number(item.quantity);
+            if (isNaN(qty) || qty < 1) err.quantity = 'Qty must be ≥ 1';
+            const cost = Number(item.purchasePrice);
+            if (isNaN(cost) || cost < 0) err.purchasePrice = 'Cost must be ≥ 0';
+
+            if (item.productId) {
+               const comboKey = `${item.productId}-${(item.size || '').toLowerCase()}`;
+               if (seenCombos.has(comboKey)) {
+                  err.duplicate = 'Duplicate product & size combination';
+               } else {
+                  seenCombos.add(comboKey);
+               }
+            }
+
+            if (Object.keys(err).length > 0) {
+               itemErrs[index] = err;
+            }
+         });
+
+         if (itemErrs.length > 0) errs.itemDetails = itemErrs;
+      }
+      return errs;
+   };
+
    const handleCreateSubmit = async (e) => {
       e.preventDefault();
-      if (!poForm.supplierId || poForm.items.length === 0) {
-         alert('Please select a supplier and add at least one item');
+      const validationErrors = validateCreatePO();
+      if (Object.keys(validationErrors).length > 0) {
+         setCreateErrors(validationErrors);
          return;
       }
+      setCreateErrors({});
 
       setSubmitting(true);
       try {
@@ -106,6 +148,7 @@ export default function AdminPurchaseOrders() {
 
    const openReceiveModal = (po) => {
       setSelectedPO(po);
+      setReceiveErrors('');
       setReceiveItems(
          po.items.map(item => ({
             productId: item.product._id || item.product,
@@ -113,7 +156,7 @@ export default function AdminPurchaseOrders() {
             name: item.product.name || 'Product',
             orderedQty: item.quantity,
             alreadyReceived: item.receivedQuantity,
-            quantityReceived: item.quantity - item.receivedQuantity
+            quantityReceived: Math.max(0, item.quantity - item.receivedQuantity)
          }))
       );
       setShowReceiveModal(true);
@@ -123,6 +166,27 @@ export default function AdminPurchaseOrders() {
       e.preventDefault();
       if (!selectedPO) return;
 
+      let totalIntake = 0;
+      for (const item of receiveItems) {
+         const qty = Number(item.quantityReceived);
+         const maxAllowed = item.orderedQty - item.alreadyReceived;
+         if (isNaN(qty) || qty < 0) {
+            setReceiveErrors(`Received quantity for ${item.name} cannot be negative.`);
+            return;
+         }
+         if (qty > maxAllowed) {
+            setReceiveErrors(`Received quantity for ${item.name} exceeds remaining ordered items (${maxAllowed}).`);
+            return;
+         }
+         totalIntake += qty;
+      }
+
+      if (totalIntake === 0) {
+         setReceiveErrors('Please enter at least 1 unit to receive into stock inventory.');
+         return;
+      }
+
+      setReceiveErrors('');
       setSubmitting(true);
       try {
          await api.post(`/purchase-orders/${selectedPO._id}/receive`, {
@@ -136,7 +200,7 @@ export default function AdminPurchaseOrders() {
          setShowReceiveModal(false);
          fetchPOs();
       } catch (err) {
-         alert(err.response?.data?.message || 'Stock intake receiving failed');
+         setReceiveErrors(err.response?.data?.message || 'Stock intake receiving failed');
       } finally {
          setSubmitting(false);
       }
@@ -151,7 +215,10 @@ export default function AdminPurchaseOrders() {
                <h1 className="text-2xl font-black uppercase tracking-tight mt-1">Purchase Orders & Intake</h1>
             </div>
             <Button
-               onClick={() => setShowCreateModal(true)}
+               onClick={() => {
+                  setCreateErrors({});
+                  setShowCreateModal(true);
+               }}
                className="bg-white text-black text-xs font-black uppercase tracking-wider px-6 py-3 hover:bg-gray-200"
             >
                <Plus size={16} className="mr-2 inline" /> Create Purchase Order
@@ -250,7 +317,6 @@ export default function AdminPurchaseOrders() {
                      <div>
                         <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Select Supplier *</label>
                         <select
-                           required
                            value={poForm.supplierId}
                            onChange={(e) => setPoForm({ ...poForm, supplierId: e.target.value })}
                            className="w-full p-2.5 border border-black font-mono text-xs bg-white"
@@ -260,6 +326,7 @@ export default function AdminPurchaseOrders() {
                               <option key={s._id} value={s._id}>{s.supplierName} ({s.contactPerson || 'N/A'})</option>
                            ))}
                         </select>
+                        {createErrors.supplierId && <p className="text-red-500 text-[10px] font-bold mt-1">{createErrors.supplierId}</p>}
                      </div>
 
                      {/* PO Items */}
@@ -268,63 +335,74 @@ export default function AdminPurchaseOrders() {
                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Order Items *</label>
                            <button type="button" onClick={addPOItem} className="text-xs font-black text-blue-600 hover:underline">+ Add Item</button>
                         </div>
+                        {createErrors.items && <p className="text-red-500 text-[10px] font-bold">{createErrors.items}</p>}
 
-                        {poForm.items.map((item, idx) => (
-                           <div key={idx} className="p-3 border border-black bg-brand-grey space-y-2">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                 <select
-                                    required
-                                    value={item.productId}
-                                    onChange={(e) => updatePOItem(idx, 'productId', e.target.value)}
-                                    className="w-full p-2 border border-black font-mono text-xs bg-white"
-                                 >
-                                    <option value="">-- Select Product --</option>
-                                    {products.map(p => (
-                                       <option key={p._id} value={p._id}>{p.name}</option>
-                                    ))}
-                                 </select>
-
-                                 <Input
-                                    type="text"
-                                    placeholder="Size (e.g. S, M, L)"
-                                    value={item.size}
-                                    onChange={(e) => updatePOItem(idx, 'size', e.target.value)}
-                                 />
-                              </div>
-
-                              <div className="grid grid-cols-3 gap-2">
-                                 <div>
-                                    <label className="text-[8px] font-black uppercase text-gray-500">Quantity</label>
-                                    <Input
-                                       type="number"
-                                       min="1"
-                                       value={item.quantity}
-                                       onChange={(e) => updatePOItem(idx, 'quantity', e.target.value)}
-                                    />
-                                 </div>
-                                 <div>
-                                    <label className="text-[8px] font-black uppercase text-gray-500">Unit Cost (Rs.)</label>
-                                    <Input
-                                       type="number"
-                                       min="0"
-                                       value={item.purchasePrice}
-                                       onChange={(e) => updatePOItem(idx, 'purchasePrice', e.target.value)}
-                                    />
-                                 </div>
-                                 <div className="flex items-end">
-                                    {poForm.items.length > 1 && (
-                                       <button
-                                          type="button"
-                                          onClick={() => removePOItem(idx)}
-                                          className="w-full py-2 text-[10px] font-black uppercase bg-red-100 text-red-600 border border-red-600"
+                        {poForm.items.map((item, idx) => {
+                           const itemErr = createErrors.itemDetails && createErrors.itemDetails[idx];
+                           return (
+                              <div key={idx} className="p-3 border border-black bg-brand-grey space-y-2">
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div>
+                                       <select
+                                          value={item.productId}
+                                          onChange={(e) => updatePOItem(idx, 'productId', e.target.value)}
+                                          className="w-full p-2 border border-black font-mono text-xs bg-white"
                                        >
-                                          Remove
-                                       </button>
-                                    )}
+                                          <option value="">-- Select Product --</option>
+                                          {products.map(p => (
+                                             <option key={p._id} value={p._id}>{p.name}</option>
+                                          ))}
+                                       </select>
+                                       {itemErr?.productId && <p className="text-red-500 text-[10px] font-bold mt-1">{itemErr.productId}</p>}
+                                    </div>
+
+                                    <div>
+                                       <Input
+                                          type="text"
+                                          placeholder="Size (e.g. S, M, L)"
+                                          value={item.size}
+                                          onChange={(e) => updatePOItem(idx, 'size', e.target.value)}
+                                       />
+                                    </div>
                                  </div>
+
+                                 <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                       <label className="text-[8px] font-black uppercase text-gray-500">Quantity (Min 1)</label>
+                                       <Input
+                                          type="number"
+                                          min="1"
+                                          value={item.quantity}
+                                          onChange={(e) => updatePOItem(idx, 'quantity', e.target.value)}
+                                       />
+                                       {itemErr?.quantity && <p className="text-red-500 text-[9px] font-bold mt-0.5">{itemErr.quantity}</p>}
+                                    </div>
+                                    <div>
+                                       <label className="text-[8px] font-black uppercase text-gray-500">Unit Cost (Rs.)</label>
+                                       <Input
+                                          type="number"
+                                          min="0"
+                                          value={item.purchasePrice}
+                                          onChange={(e) => updatePOItem(idx, 'purchasePrice', e.target.value)}
+                                       />
+                                       {itemErr?.purchasePrice && <p className="text-red-500 text-[9px] font-bold mt-0.5">{itemErr.purchasePrice}</p>}
+                                    </div>
+                                    <div className="flex items-end">
+                                       {poForm.items.length > 1 && (
+                                          <button
+                                             type="button"
+                                             onClick={() => removePOItem(idx)}
+                                             className="w-full py-2 text-[10px] font-black uppercase bg-red-100 text-red-600 border border-red-600"
+                                          >
+                                             Remove
+                                          </button>
+                                       )}
+                                    </div>
+                                 </div>
+                                 {itemErr?.duplicate && <p className="text-red-500 text-[10px] font-bold mt-1">{itemErr.duplicate}</p>}
                               </div>
-                           </div>
-                        ))}
+                           );
+                        })}
                      </div>
 
                      <div className="flex gap-4 pt-4 border-t border-black">
@@ -340,40 +418,75 @@ export default function AdminPurchaseOrders() {
             </div>
          )}
 
-         {/* Receive Stock Modal */}
+         {/* Receive Stock Modal — Linked Supplier PO to Stock Intake */}
          {showReceiveModal && selectedPO && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-               <div className="bg-white border-2 border-black p-8 max-w-lg w-full space-y-6">
-                  <div className="border-b border-black pb-4">
-                     <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Stock Intake Protocol</span>
-                     <h3 className="text-base font-black uppercase tracking-tight mt-1">Receive PO #{selectedPO.poNumber}</h3>
+               <div className="bg-white border-2 border-black p-8 max-w-xl w-full space-y-6 max-h-[90vh] overflow-y-auto">
+                  <div className="border-b border-black pb-4 flex justify-between items-start">
+                     <div>
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Stock Intake Protocol</span>
+                        <h3 className="text-base font-black uppercase tracking-tight mt-1">Receive PO #{selectedPO.poNumber}</h3>
+                     </div>
+                     <button onClick={() => setShowReceiveModal(false)}><X size={18} /></button>
                   </div>
+
+                  {/* Supplier & PO Context Card linking PO to Stock Intake */}
+                  <div className="bg-brand-grey border border-black p-4 space-y-2">
+                     <div className="flex justify-between items-center text-xs font-black uppercase">
+                        <span>Supplier: {selectedPO.supplier?.supplierName || 'N/A'}</span>
+                        <span className="text-[10px] text-gray-500 font-mono">Contact: {selectedPO.supplier?.phone || selectedPO.supplier?.email || 'N/A'}</span>
+                     </div>
+                     <div className="text-[10px] text-gray-600 font-mono flex justify-between border-t border-gray-300 pt-2">
+                        <span>Order Date: {new Date(selectedPO.createdAt).toLocaleDateString()}</span>
+                        <span>Total Cost: Rs. {selectedPO.totalCost?.toLocaleString()}</span>
+                     </div>
+                     <div className="bg-blue-50 border border-blue-400 p-2.5 text-[10px] text-blue-900 font-semibold flex items-center gap-2">
+                        <Truck size={14} className="shrink-0 text-blue-600" />
+                        <span>Receiving these items directly updates <b>Central Inventory stock levels</b> for product variants.</span>
+                     </div>
+                  </div>
+
+                  {receiveErrors && (
+                     <div className="bg-red-50 border border-red-600 text-red-700 text-xs font-bold p-3 uppercase tracking-wider">
+                        {receiveErrors}
+                     </div>
+                  )}
 
                   <form onSubmit={handleReceiveSubmit} className="space-y-4">
                      <div className="space-y-3">
-                        {receiveItems.map((item, idx) => (
-                           <div key={idx} className="p-3 border border-black bg-brand-grey flex justify-between items-center">
-                              <div>
-                                 <p className="text-xs font-black uppercase">{item.name} {item.size ? `[${item.size}]` : ''}</p>
-                                 <p className="text-[9px] text-gray-500 font-mono">Ordered: {item.orderedQty} | Prev Rec'd: {item.alreadyReceived}</p>
+                        {receiveItems.map((item, idx) => {
+                           const remaining = item.orderedQty - item.alreadyReceived;
+                           const currentIntake = Number(item.quantityReceived) || 0;
+                           return (
+                              <div key={idx} className="p-3 border border-black bg-white space-y-2">
+                                 <div className="flex justify-between items-center">
+                                    <div>
+                                       <p className="text-xs font-black uppercase">{item.name} {item.size ? `[${item.size}]` : ''}</p>
+                                       <p className="text-[9px] text-gray-500 font-mono">Ordered: {item.orderedQty} | Prev Rec'd: {item.alreadyReceived} | Rem: {remaining}</p>
+                                    </div>
+                                    <div className="w-28 text-right">
+                                       <label className="text-[8px] font-black uppercase block text-gray-500 mb-0.5">Rec'd Now</label>
+                                       <input
+                                          type="number"
+                                          min="0"
+                                          max={remaining}
+                                          value={item.quantityReceived}
+                                          onChange={(e) => {
+                                             const updated = [...receiveItems];
+                                             updated[idx].quantityReceived = e.target.value;
+                                             setReceiveItems(updated);
+                                          }}
+                                          className="w-full p-1.5 border border-black font-mono text-xs text-right bg-white"
+                                       />
+                                    </div>
+                                 </div>
+                                 <div className="text-[9px] font-mono text-green-700 bg-green-50 p-1.5 border border-green-200 flex items-center justify-between">
+                                    <span>Stock Intake Link:</span>
+                                    <span className="font-bold">+ {currentIntake} units to Central Inventory</span>
+                                 </div>
                               </div>
-                              <div className="w-24">
-                                 <label className="text-[8px] font-black uppercase block text-gray-500">Rec'd Now</label>
-                                 <input
-                                    type="number"
-                                    min="0"
-                                    max={item.orderedQty - item.alreadyReceived}
-                                    value={item.quantityReceived}
-                                    onChange={(e) => {
-                                       const updated = [...receiveItems];
-                                       updated[idx].quantityReceived = e.target.value;
-                                       setReceiveItems(updated);
-                                    }}
-                                    className="w-full p-1.5 border border-black font-mono text-xs text-right bg-white"
-                                 />
-                              </div>
-                           </div>
-                        ))}
+                           );
+                        })}
                      </div>
 
                      <div className="flex gap-4 pt-4 border-t border-black">
@@ -391,3 +504,4 @@ export default function AdminPurchaseOrders() {
       </div>
    );
 }
+

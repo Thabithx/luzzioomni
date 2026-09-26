@@ -16,6 +16,7 @@ export default function AdminSuppliers() {
    // Modal State
    const [showModal, setShowModal] = useState(false);
    const [editingSupplier, setEditingSupplier] = useState(null);
+   const [errors, setErrors] = useState({});
    const [formData, setFormData] = useState({
       supplierName: '',
       contactPerson: '',
@@ -25,6 +26,23 @@ export default function AdminSuppliers() {
       notes: '',
       status: 'active'
    });
+
+   const SL_PHONE_REGEX = /^0[0-9]{9}$/;
+   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+   const validateSupplierForm = () => {
+      const errs = {};
+      if (!formData.supplierName || formData.supplierName.trim().length < 3) {
+         errs.supplierName = 'Supplier name must be at least 3 characters.';
+      }
+      if (formData.phone && !SL_PHONE_REGEX.test(formData.phone.trim())) {
+         errs.phone = 'Enter a valid 10-digit Sri Lankan phone number (e.g. 0771234567).';
+      }
+      if (formData.email && !EMAIL_REGEX.test(formData.email.trim())) {
+         errs.email = 'Enter a valid email address.';
+      }
+      return errs;
+   };
 
    useEffect(() => {
       fetchSuppliers();
@@ -43,6 +61,7 @@ export default function AdminSuppliers() {
    };
 
    const openModal = (supplier = null) => {
+      setErrors({});
       if (supplier) {
          setEditingSupplier(supplier);
          setFormData({
@@ -71,6 +90,12 @@ export default function AdminSuppliers() {
 
    const handleSubmit = async (e) => {
       e.preventDefault();
+      const validationErrors = validateSupplierForm();
+      if (Object.keys(validationErrors).length > 0) {
+         setErrors(validationErrors);
+         return;
+      }
+      setErrors({});
       try {
          if (editingSupplier) {
             await api.put(`/suppliers/${editingSupplier._id}`, formData);
@@ -200,10 +225,10 @@ export default function AdminSuppliers() {
                         <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Company / Supplier Name *</label>
                         <Input
                            type="text"
-                           required
                            value={formData.supplierName}
                            onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
                         />
+                        {errors.supplierName && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.supplierName}</p>}
                      </div>
 
                      <div className="grid grid-cols-2 gap-4">
@@ -219,9 +244,11 @@ export default function AdminSuppliers() {
                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Phone Number</label>
                            <Input
                               type="tel"
+                              placeholder="0771234567"
                               value={formData.phone}
                               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                            />
+                           {errors.phone && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.phone}</p>}
                         </div>
                      </div>
 
@@ -232,6 +259,7 @@ export default function AdminSuppliers() {
                            value={formData.email}
                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         />
+                        {errors.email && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.email}</p>}
                      </div>
 
                      <div>

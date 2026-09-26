@@ -1,7 +1,9 @@
-// Supplier / Vendor management controller.
-// Handles creation, updates, and maintenance of procurement suppliers.
 
 const Supplier = require('../models/Supplier');
+
+// Sri Lankan phone: 10 digits starting with 0 (e.g. 0771234567)
+const SL_PHONE_REGEX = /^0[0-9]{9}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // @desc    Get all suppliers
 // @route   GET /api/suppliers
@@ -42,15 +44,23 @@ exports.createSupplier = async (req, res) => {
    try {
       const { supplierName, contactPerson, phone, email, address, notes, status } = req.body;
 
-      if (!supplierName) {
-         return res.status(400).json({ success: false, message: 'Supplier name is required' });
+      if (!supplierName || supplierName.trim().length < 3) {
+         return res.status(400).json({ success: false, message: 'Supplier name must be at least 3 characters' });
+      }
+
+      if (phone && !SL_PHONE_REGEX.test(phone.trim())) {
+         return res.status(400).json({ success: false, message: 'Phone must be a valid Sri Lankan number (e.g. 0771234567)' });
+      }
+
+      if (email && !EMAIL_REGEX.test(email.trim())) {
+         return res.status(400).json({ success: false, message: 'Invalid email address format' });
       }
 
       const supplier = await Supplier.create({
-         supplierName,
+         supplierName: supplierName.trim(),
          contactPerson,
-         phone,
-         email,
+         phone: phone ? phone.trim() : '',
+         email: email ? email.trim().toLowerCase() : '',
          address,
          notes,
          status: status || 'active'
@@ -75,6 +85,20 @@ exports.updateSupplier = async (req, res) => {
       const supplier = await Supplier.findById(req.params.id);
       if (!supplier) {
          return res.status(404).json({ success: false, message: 'Supplier not found' });
+      }
+
+      const { supplierName, phone, email } = req.body;
+
+      if (supplierName !== undefined && supplierName.trim().length < 3) {
+         return res.status(400).json({ success: false, message: 'Supplier name must be at least 3 characters' });
+      }
+
+      if (phone && !SL_PHONE_REGEX.test(phone.trim())) {
+         return res.status(400).json({ success: false, message: 'Phone must be a valid Sri Lankan number (e.g. 0771234567)' });
+      }
+
+      if (email && !EMAIL_REGEX.test(email.trim())) {
+         return res.status(400).json({ success: false, message: 'Invalid email address format' });
       }
 
       const fieldsToUpdate = ['supplierName', 'contactPerson', 'phone', 'email', 'address', 'notes', 'status'];

@@ -62,8 +62,16 @@ exports.createPurchaseOrder = async (req, res) => {
             return res.status(400).json({ success: false, message: `Product not found (ID: ${item.productId})` });
          }
 
-         const qty = Number(item.quantity) || 1;
-         const cost = Number(item.purchasePrice) || 0;
+         const qty = Number(item.quantity);
+         const cost = Number(item.purchasePrice);
+
+         if (!Number.isFinite(qty) || qty < 1) {
+            return res.status(400).json({ success: false, message: `Quantity for "${product.name}" must be at least 1` });
+         }
+
+         if (!Number.isFinite(cost) || cost < 0) {
+            return res.status(400).json({ success: false, message: `Purchase price for "${product.name}" cannot be negative` });
+         }
 
          totalCost += qty * cost;
 
@@ -124,7 +132,12 @@ exports.receivePurchaseOrder = async (req, res) => {
             (r.size || '').toLowerCase() === (item.size || '').toLowerCase()
          );
 
-         const qtyReceived = match ? Number(match.quantityReceived) : (item.quantity - item.receivedQuantity);
+         const rawQty = match ? Number(match.quantityReceived) : (item.quantity - item.receivedQuantity);
+         const qtyReceived = Number.isFinite(rawQty) ? Math.max(0, rawQty) : 0;
+
+         if (match && rawQty < 0) {
+            return res.status(400).json({ success: false, message: 'Received quantity cannot be negative' });
+         }
 
          if (qtyReceived > 0) {
             item.receivedQuantity = Math.min(item.quantity, item.receivedQuantity + qtyReceived);
