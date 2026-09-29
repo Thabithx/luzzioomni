@@ -4,6 +4,7 @@
 const User = require('../models/User');
 const Attendance = require('../models/Attendance');
 const Shift = require('../models/Shift');
+const { fail, blank, validEmail } = require('../utils/validate');
 
 // @desc    Get all staff users (ADMIN, SALES, WAREHOUSE)
 // @route   GET /api/staff
@@ -35,6 +36,19 @@ exports.createStaffMember = async (req, res) => {
       if (!name || !email || !password || !role) {
          return res.status(400).json({ success: false, message: 'Name, email, password, and role are required' });
       }
+      if (String(name).trim().length < 2) {
+         return fail(res, 'Name must be at least 2 characters');
+      }
+      if (!validEmail(email)) {
+         return fail(res, 'Please provide a valid email address');
+      }
+      if (String(password).length < 6) {
+         return fail(res, 'Password must be at least 6 characters');
+      }
+      const validRoles = ['admin', 'sales', 'warehouse'];
+      if (!validRoles.includes(role)) {
+         return fail(res, `Role must be one of: ${validRoles.join(', ')}`);
+      }
 
       const existing = await User.findOne({ email: email.trim().toLowerCase() });
       if (existing) {
@@ -47,7 +61,7 @@ exports.createStaffMember = async (req, res) => {
          name: name.trim(),
          email: email.trim().toLowerCase(),
          password,
-         role: ['admin', 'sales', 'warehouse'].includes(role) ? role : 'sales',
+         role,
          employeeId: autoEmployeeId,
          phone: phone || '',
          address: address || '',

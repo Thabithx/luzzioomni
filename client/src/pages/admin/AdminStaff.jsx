@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { firstError, isBlank, isEmail } from '../../utils/formValidate';
 
 export default function AdminStaff() {
    const { user } = useAuth();
@@ -92,6 +93,22 @@ export default function AdminStaff() {
    // Form Submissions
    const handleStaffSubmit = async (e) => {
       e.preventDefault();
+
+      const error = firstError([
+         { condition: isBlank(staffForm.name),                       message: 'Name is required' },
+         { condition: staffForm.name.trim().length < 2,              message: 'Name must be at least 2 characters' },
+         { condition: isBlank(staffForm.email),                      message: 'Email is required' },
+         { condition: !isEmail(staffForm.email),                     message: 'Please enter a valid email address' },
+         { condition: isBlank(staffForm.password),                   message: 'Password is required' },
+         { condition: staffForm.password.length < 6,                 message: 'Password must be at least 6 characters' },
+         { condition: isBlank(staffForm.role),                       message: 'Please select a role' },
+      ]);
+
+      if (error) {
+         alert(error);
+         return;
+      }
+
       setSubmitting(true);
       try {
          await api.post('/staff', staffForm);

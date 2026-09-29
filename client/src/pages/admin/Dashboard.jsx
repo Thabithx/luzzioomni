@@ -140,6 +140,37 @@ const Dashboard = () => {
       { id:'6month', label:'6 Months' }, { id:'year', label:'Year' }, { id:'all', label:'All Time' }
    ];
 
+   const exportConsolidatedReportCSV = async () => {
+      try {
+         const res = await api.get('/analytics/consolidated-report');
+         const d = res.data.data?.executiveSummary;
+         if (!d) return;
+
+         let csv = "data:text/csv;charset=utf-8,Module / KPI Dimension,Consolidated Value,Performance Indicator\n";
+         csv += `"Gross Omnicommerce Revenue",LKR ${d.grossRevenue.toLocaleString()},"Sales & Commerce"\n`;
+         csv += `"Total Orders Processed",${d.orderCount},"Fulfillment"\n`;
+         csv += `"Net Operating Profit",LKR ${d.netProfit.toLocaleString()},"Profitability"\n`;
+         csv += `"Net Profit Margin",${d.profitMarginPercent}%,"Margin Efficiency"\n`;
+         csv += `"Total Inventory Units",${d.totalStockUnits.toLocaleString()} units,"Warehouse Capacity"\n`;
+         csv += `"Central Stock Valuation",LKR ${d.totalStockValuation.toLocaleString()},"Asset Value"\n`;
+         csv += `"Low-Stock Warnings",${d.lowStockCount} items,"Stock Alerts"\n`;
+         csv += `"Total Returns / Exchanges",${d.totalReturns},"Reverse Logistics"\n`;
+         csv += `"Return Rate Percentage",${d.returnRatePercent}%,"Product Quality"\n`;
+         csv += `"Active Staff Headcount",${d.totalStaff} members,"Human Resources"\n`;
+         csv += `"Active Clock-Ins Today",${d.activeClockIns},"Workforce Attendance"\n`;
+
+         const encodedUri = encodeURI(csv);
+         const link = document.createElement("a");
+         link.setAttribute("href", encodedUri);
+         link.setAttribute("download", `Consolidated_Executive_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+         document.body.appendChild(link);
+         link.click();
+         document.body.removeChild(link);
+      } catch (err) {
+         alert('Failed to generate consolidated analytics report');
+      }
+   };
+
    return (
       <div className='space-y-12'>
          <div className='flex flex-col md:flex-row md:justify-between md:items-end border-b border-black pb-8 gap-8'>
@@ -148,12 +179,20 @@ const Dashboard = () => {
                <h1 className='text-5xl font-black uppercase tracking-tighter leading-none'>Command Center</h1>
             </div>
             <div className='flex flex-col items-start md:items-end gap-4'>
-               <div className='flex items-center bg-brand-grey border border-black p-1'>
-                  {ranges.map((r) => (
-                     <button key={r.id} onClick={() => setRange(r.id)} className={cn('px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all', range === r.id ? 'bg-black text-white' : 'text-black hover:bg-black/5')}>
-                        {r.label}
-                     </button>
-                  ))}
+               <div className='flex items-center gap-2'>
+                  <button
+                     onClick={exportConsolidatedReportCSV}
+                     className='bg-black text-white text-[9px] font-black uppercase tracking-widest px-4 py-2 border border-black hover:bg-gray-800'
+                  >
+                     Export Consolidated Report (CSV)
+                  </button>
+                  <div className='flex items-center bg-brand-grey border border-black p-1'>
+                     {ranges.map((r) => (
+                        <button key={r.id} onClick={() => setRange(r.id)} className={cn('px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all', range === r.id ? 'bg-black text-white' : 'text-black hover:bg-black/5')}>
+                           {r.label}
+                        </button>
+                     ))}
+                  </div>
                </div>
                <p className='text-[10px] font-bold uppercase tracking-widest text-gray-400'>Session: 0x{token?.slice(-4).toUpperCase() || 'SYS'}</p>
             </div>
