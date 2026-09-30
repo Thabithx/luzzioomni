@@ -8,11 +8,13 @@ import { Search, Boxes, AlertTriangle, RefreshCw, Plus, History, ArrowUpRight, A
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
+import { firstError, isBlank } from '../../utils/formValidate';
 
 export default function AdminInventory() {
-   const [activeTab, setActiveTab] = useState('registry'); // 'registry' | 'history'
+   const [activeTab, setActiveTab] = useState('registry'); // 'registry' | 'history' | 'reports'
    const [products, setProducts] = useState([]);
    const [history, setHistory] = useState([]);
+   const [reportData, setReportData] = useState(null);
    const [loading, setLoading] = useState(false);
    const [search, setSearch] = useState('');
    const [lowStockFilter, setLowStockFilter] = useState(false);
@@ -31,8 +33,10 @@ export default function AdminInventory() {
    useEffect(() => {
       if (activeTab === 'registry') {
          fetchInventory();
-      } else {
+      } else if (activeTab === 'history') {
          fetchHistory();
+      } else if (activeTab === 'reports') {
+         fetchReport();
       }
    }, [activeTab, lowStockFilter]);
 
@@ -60,6 +64,35 @@ export default function AdminInventory() {
       }
    };
 
+   const fetchReport = async () => {
+      setLoading(true);
+      try {
+         const res = await api.get('/inventory/report');
+         setReportData(res.data.data);
+      } catch (err) {
+         console.error('Fetch report error:', err);
+      } finally {
+         setLoading(false);
+      }
+   };
+
+   const exportCSV = () => {
+      if (!products.length) return;
+      let csvContent = "data:text/csv;charset=utf-8,SKU,Product Name,Central Stock,Unit Price (LKR),Total Valuation (LKR)\n";
+      products.forEach(p => {
+         const price = p.salePrice > 0 ? p.salePrice : p.price;
+         const val = (p.stock || 0) * price;
+         csvContent += `"${p.sku || ''}","${p.name.replace(/"/g, '""')}",${p.stock || 0},${price},${val}\n`;
+      });
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Stock_Valuation_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+   };
+
    const handleSearchSubmit = (e) => {
       e.preventDefault();
       fetchInventory();
@@ -78,8 +111,17 @@ export default function AdminInventory() {
 
    const handleAdjustSubmit = async (e) => {
       e.preventDefault();
-      if (!selectedProduct || adjustData.quantityChange === 0) {
-         alert('Quantity change cannot be 0');
+
+      const qty = Number(adjustData.quantityChange);
+      const error = firstError([
+         { condition: !selectedProduct,                   message: 'No product selected' },
+         { condition: isBlank(adjustData.transactionType), message: 'Please select a transaction type' },
+         { condition: isNaN(qty) || qty === 0,             message: 'Quantity change cannot be 0' },
+         { condition: !Number.isFinite(qty),               message: 'Please enter a valid quantity number' },
+      ]);
+
+      if (error) {
+         alert(error);
          return;
       }
 
@@ -88,7 +130,7 @@ export default function AdminInventory() {
          await api.post('/inventory/adjust', {
             productId: selectedProduct._id,
             variantSize: adjustData.variantSize,
-            quantityChange: Number(adjustData.quantityChange),
+            quantityChange: qty,
             transactionType: adjustData.transactionType,
             notes: adjustData.notes
          });
@@ -122,6 +164,12 @@ export default function AdminInventory() {
                   className={`text-xs font-black uppercase tracking-wider px-5 py-2.5 ${activeTab === 'history' ? 'bg-white text-black' : 'bg-transparent text-white border border-white'}`}
                >
                   <History size={14} className="mr-2 inline" /> Audit History
+               </Button>
+               <Button
+                  onClick={() => setActiveTab('reports')}
+                  className={`text-xs font-black uppercase tracking-wider px-5 py-2.5 ${activeTab === 'reports' ? 'bg-white text-black' : 'bg-transparent text-white border border-white'}`}
+               >
+                  Stock Reports & Valuation
                </Button>
             </div>
          </div>
@@ -311,6 +359,71 @@ export default function AdminInventory() {
                      )}
                   </tbody>
                </table>
+            </div>
+         )}
+
+         {/* Tab Content: Reports & Valuation */}
+         {activeTab === 'reports' && (
+            <div className="space-y-6">
+               <div className="flex justify-between items-center bg-brand-grey p-6 border border-black">
+                  <div>
+                     <h3 className="text-lg font-black uppercase">Stock Valuation & Inventory Movement Reports</h3>
+                     <p className="text-[10px] text-gray-500 font-mono mt-1">DULARA: Real-time inventory valuation summary and movement ledger.</p>
+                  </div>
+                  <Button onClick={exportCSV} className="bg-black text-white text-xs font-black uppercase px-6 py-3">
+                     Download Stock Valuation CSV
+                  </Button>
+               </div>
+
+               {reportData && (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                     <div className="p-6 bg-white border border-black space-y-1">
+                        <p className="text-[10px] font-black uppercase text-gray-400">Total Products</p>
+                        <p className="text-2xl font-black">{reportData.totalProducts}</p>
+                     </div>
+                     <div className="p-6 bg-white border border-black space-y-1">
+                        <p className="text-[10px] font-black uppercase text-gray-400">Total Units in Stock</p>
+                        <p className="text-2xl font-black">{reportData.totalStockCount.toLocaleString()} units</p>
+                     </div>
+                     <div className="p-6 bg-white border border-black space-y-1">
+                        <p className="text-[10px] font-black uppercase text-gray-400">Total Inventory Valuation</p>
+                        <p className="text-2xl font-black text-emerald-700">LKR {reportData.totalStockValuation.toLocaleString()}</p>
+                     </div>
+                     <div className="p-6 bg-white border border-black space-y-1">
+                        <p className="text-[10px] font-black uppercase text-gray-400">Low Stock Items</p>
+                        <p className="text-2xl font-black text-red-600">{reportData.lowStockCount}</p>
+                     </div>
+                  </div>
+               )}
+
+               {/* Category Valuation Breakdown */}
+               {reportData?.valuationByCategory && (
+                  <div className="bg-white border border-black">
+                     <div className="p-4 bg-brand-grey border-b border-black">
+                        <h4 className="text-xs font-black uppercase tracking-wider">Category-Wise Valuation Breakdown</h4>
+                     </div>
+                     <table className="w-full text-left border-collapse">
+                        <thead>
+                           <tr className="border-b border-black bg-gray-50 text-[9px] font-black uppercase tracking-wider">
+                              <th className="p-4">Category</th>
+                              <th className="p-4">Products</th>
+                              <th className="p-4">Total Stock</th>
+                              <th className="p-4 text-right">Category Valuation (LKR)</th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 text-xs font-mono">
+                           {Object.entries(reportData.valuationByCategory).map(([cat, info]) => (
+                              <tr key={cat}>
+                                 <td className="p-4 font-black">{cat}</td>
+                                 <td className="p-4">{info.count} items</td>
+                                 <td className="p-4">{info.stock} units</td>
+                                 <td className="p-4 text-right font-black">LKR {info.valuation.toLocaleString()}</td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+               )}
             </div>
          )}
 

@@ -1,6 +1,7 @@
 const Product = require('../models/Product');
 const { isDevStore } = require('../config/database');
 const devStore = require('../devStore');
+const { fail, blank, nonNeg, positive } = require('../utils/validate');
 
 // Performance: In-memory cache for high-traffic read operations
 const cache = {
@@ -135,6 +136,19 @@ exports.getProduct = async (req, res) => {
 // @access  Private/Admin
 exports.createProduct = async (req, res) => {
    try {
+      const { name, price, salePrice, stock, description } = req.body;
+
+      if (blank(name))        return fail(res, 'Product name is required');
+      if (blank(description)) return fail(res, 'Product description is required');
+      if (!positive(price))   return fail(res, 'Price must be a positive number');
+      if (stock !== undefined && stock !== '' && !nonNeg(stock)) {
+         return fail(res, 'Stock cannot be negative');
+      }
+      if (salePrice !== undefined && salePrice !== '') {
+         if (!nonNeg(salePrice))             return fail(res, 'Sale price cannot be negative');
+         if (Number(salePrice) >= Number(price)) return fail(res, 'Sale price must be less than the regular price');
+      }
+
       const product = await Product.create(req.body);
       clearCache();
 
@@ -156,6 +170,20 @@ exports.updateProduct = async (req, res) => {
 
       if (!product) {
          return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+
+      const { price, salePrice, stock, name, description } = req.body;
+
+      if (name !== undefined && blank(name))               return fail(res, 'Product name cannot be empty');
+      if (description !== undefined && blank(description)) return fail(res, 'Description cannot be empty');
+      if (price !== undefined && !positive(price))         return fail(res, 'Price must be a positive number');
+      if (stock !== undefined && stock !== '' && !nonNeg(stock)) {
+         return fail(res, 'Stock cannot be negative');
+      }
+      if (salePrice !== undefined && salePrice !== '') {
+         const effectivePrice = price !== undefined ? Number(price) : product.price;
+         if (!nonNeg(salePrice))                        return fail(res, 'Sale price cannot be negative');
+         if (Number(salePrice) >= effectivePrice)       return fail(res, 'Sale price must be less than the regular price');
       }
 
       product = await Product.findByIdAndUpdate(req.params.id, req.body, {
@@ -197,17 +225,6 @@ exports.deleteProduct = async (req, res) => {
    }
 };
 
-// Helper to calculate product rating based on approved reviews
-const updateProductRatingSummary = (product) => {
-   const approvedReviews = product.reviews.filter(r => (r.status || 'approved') === 'approved');
-   product.numReviews = approvedReviews.length;
-   if (approvedReviews.length > 0) {
-      product.rating = approvedReviews.reduce((acc, item) => item.rating + acc, 0) / approvedReviews.length;
-   } else {
-      product.rating = 0;
-   }
-};
-
 // @desc    Create new review
 // @route   POST /api/products/:id/reviews
 // @access  Public
@@ -221,8 +238,6 @@ exports.createProductReview = async (req, res) => {
          return res.status(404).json({ success: false, message: 'Product not found' });
       }
 
-      const isAdmin = req.user ? req.user.role === 'admin' : false;
-
       const review = {
          name,
          email,
@@ -230,69 +245,26 @@ exports.createProductReview = async (req, res) => {
          comment,
          images: images || [],
          user: req.user ? req.user._id : null,
-         isVerified: isAdmin,
-         status: isAdmin ? 'approved' : 'pending',
+         isVerified: req.user ? req.user.role === 'admin' : false,
          createdAt: new Date()
       };
 
       product.reviews.push(review);
 
-      // Recalculate Average Rating (only approved)
-      updateProductRatingSummary(product);
+      // Recalculate Average Rating
+      product.numReviews = product.reviews.length;
+      product.rating =
+         product.reviews.reduce((acc, item) => item.rating + acc, 0) /
+         product.reviews.length;
 
       await product.save();
       clearCache();
 
-      res.status(201).json({
-         success: true,
-         message: isAdmin ? 'Review added and approved' : 'Review submitted for moderation',
-         data: review
-      });
+      res.status(201).json({ success: true, message: 'Review added', data: review });
    } catch (err) {
       res.status(400).json({ success: false, message: err.message });
    }
 };
-
-// @desc    Update review moderation status
-// @route   PUT /api/products/:id/reviews/:reviewId/status
-// @access  Private/Admin
-exports.updateReviewStatus = async (req, res) => {
-   try {
-      const { status } = req.body;
-      if (!['pending', 'approved', 'rejected'].includes(status)) {
-         return res.status(400).json({ success: false, message: 'Invalid status value. Allowed: pending, approved, rejected' });
-      }
-
-      const product = await Product.findById(req.params.id);
-      if (!product) {
-         return res.status(404).json({ success: false, message: 'Product not found' });
-      }
-
-      const review = product.reviews.id(req.params.reviewId) || product.reviews.find(r => r._id.toString() === req.params.reviewId);
-      if (!review) {
-         return res.status(404).json({ success: false, message: 'Review not found' });
-      }
-
-      review.status = status;
-      if (status === 'approved') {
-         review.isVerified = true;
-      }
-
-      updateProductRatingSummary(product);
-
-      await product.save();
-      clearCache();
-
-      res.status(200).json({
-         success: true,
-         message: `Review moderation status updated to ${status}`,
-         data: product.reviews
-      });
-   } catch (err) {
-      res.status(400).json({ success: false, message: err.message });
-   }
-};
-
 // @desc    Delete product review
 // @route   DELETE /api/products/:id/reviews/:reviewId
 // @access  Private/Admin
@@ -317,7 +289,14 @@ exports.deleteProductReview = async (req, res) => {
       product.reviews.splice(reviewIndex, 1);
 
       // Recalculate Average Rating
-      updateProductRatingSummary(product);
+      product.numReviews = product.reviews.length;
+      if (product.numReviews > 0) {
+         product.rating =
+            product.reviews.reduce((acc, item) => item.rating + acc, 0) /
+            product.reviews.length;
+      } else {
+         product.rating = 0;
+      }
 
       await product.save();
       clearCache();
@@ -325,5 +304,81 @@ exports.deleteProductReview = async (req, res) => {
       res.status(200).json({ success: true, message: 'Review deleted', data: product.reviews });
    } catch (err) {
       res.status(400).json({ success: false, message: err.message });
+   }
+};
+
+// SRIHARAN: Review & Engagement Moderation System
+// @desc    Get all reviews across all products for Admin Moderation
+// @route   GET /api/products/reviews/all
+// @access  Private/Admin
+exports.getAllReviewsAdmin = async (req, res) => {
+   try {
+      const products = await Product.find({ 'reviews.0': { $exists: true } }).select('name images reviews');
+
+      const allReviews = [];
+      products.forEach(p => {
+         p.reviews.forEach(r => {
+            allReviews.push({
+               productId: p._id,
+               productName: p.name,
+               productImage: p.images[0] || '',
+               reviewId: r._id,
+               name: r.name,
+               email: r.email,
+               rating: r.rating,
+               comment: r.comment,
+               isApproved: r.isApproved !== false,
+               adminResponse: r.adminResponse || '',
+               createdAt: r.createdAt
+            });
+         });
+      });
+
+      allReviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      res.status(200).json({
+         success: true,
+         count: allReviews.length,
+         data: allReviews
+      });
+   } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+   }
+};
+
+// @desc    Moderate review (Approve/Reject) or respond to review
+// @route   PUT /api/products/:productId/reviews/:reviewId/moderate
+// @access  Private/Admin
+exports.moderateProductReview = async (req, res) => {
+   try {
+      const { isApproved, adminResponse } = req.body;
+      const product = await Product.findById(req.params.productId);
+
+      if (!product) {
+         return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+
+      const review = product.reviews.id(req.params.reviewId);
+      if (!review) {
+         return res.status(404).json({ success: false, message: 'Review not found' });
+      }
+
+      if (typeof isApproved === 'boolean') {
+         review.isApproved = isApproved;
+      }
+      if (adminResponse !== undefined) {
+         review.adminResponse = adminResponse;
+      }
+
+      await product.save();
+      clearCache();
+
+      res.status(200).json({
+         success: true,
+         message: 'Review moderated successfully',
+         data: review
+      });
+   } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
    }
 };
