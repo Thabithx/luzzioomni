@@ -85,6 +85,11 @@ const productSchema = new mongoose.Schema({
          comment: { type: String, required: true },
          images: { type: [String], default: [] },
          isVerified: { type: Boolean, default: false },
+         status: {
+            type: String,
+            enum: ['pending', 'approved', 'rejected'],
+            default: 'pending'
+         },
          createdAt: { type: Date, default: Date.now }
       }
    ],

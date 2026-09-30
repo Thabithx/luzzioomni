@@ -197,6 +197,17 @@ exports.deleteProduct = async (req, res) => {
    }
 };
 
+// Helper to calculate product rating based on approved reviews
+const updateProductRatingSummary = (product) => {
+   const approvedReviews = product.reviews.filter(r => (r.status || 'approved') === 'approved');
+   product.numReviews = approvedReviews.length;
+   if (approvedReviews.length > 0) {
+      product.rating = approvedReviews.reduce((acc, item) => item.rating + acc, 0) / approvedReviews.length;
+   } else {
+      product.rating = 0;
+   }
+};
+
 // @desc    Create new review
 // @route   POST /api/products/:id/reviews
 // @access  Public
@@ -210,6 +221,8 @@ exports.createProductReview = async (req, res) => {
          return res.status(404).json({ success: false, message: 'Product not found' });
       }
 
+      const isAdmin = req.user ? req.user.role === 'admin' : false;
+
       const review = {
          name,
          email,
@@ -217,26 +230,69 @@ exports.createProductReview = async (req, res) => {
          comment,
          images: images || [],
          user: req.user ? req.user._id : null,
-         isVerified: req.user ? req.user.role === 'admin' : false,
+         isVerified: isAdmin,
+         status: isAdmin ? 'approved' : 'pending',
          createdAt: new Date()
       };
 
       product.reviews.push(review);
 
-      // Recalculate Average Rating
-      product.numReviews = product.reviews.length;
-      product.rating =
-         product.reviews.reduce((acc, item) => item.rating + acc, 0) /
-         product.reviews.length;
+      // Recalculate Average Rating (only approved)
+      updateProductRatingSummary(product);
 
       await product.save();
       clearCache();
 
-      res.status(201).json({ success: true, message: 'Review added', data: review });
+      res.status(201).json({
+         success: true,
+         message: isAdmin ? 'Review added and approved' : 'Review submitted for moderation',
+         data: review
+      });
    } catch (err) {
       res.status(400).json({ success: false, message: err.message });
    }
 };
+
+// @desc    Update review moderation status
+// @route   PUT /api/products/:id/reviews/:reviewId/status
+// @access  Private/Admin
+exports.updateReviewStatus = async (req, res) => {
+   try {
+      const { status } = req.body;
+      if (!['pending', 'approved', 'rejected'].includes(status)) {
+         return res.status(400).json({ success: false, message: 'Invalid status value. Allowed: pending, approved, rejected' });
+      }
+
+      const product = await Product.findById(req.params.id);
+      if (!product) {
+         return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+
+      const review = product.reviews.id(req.params.reviewId) || product.reviews.find(r => r._id.toString() === req.params.reviewId);
+      if (!review) {
+         return res.status(404).json({ success: false, message: 'Review not found' });
+      }
+
+      review.status = status;
+      if (status === 'approved') {
+         review.isVerified = true;
+      }
+
+      updateProductRatingSummary(product);
+
+      await product.save();
+      clearCache();
+
+      res.status(200).json({
+         success: true,
+         message: `Review moderation status updated to ${status}`,
+         data: product.reviews
+      });
+   } catch (err) {
+      res.status(400).json({ success: false, message: err.message });
+   }
+};
+
 // @desc    Delete product review
 // @route   DELETE /api/products/:id/reviews/:reviewId
 // @access  Private/Admin
@@ -261,14 +317,7 @@ exports.deleteProductReview = async (req, res) => {
       product.reviews.splice(reviewIndex, 1);
 
       // Recalculate Average Rating
-      product.numReviews = product.reviews.length;
-      if (product.numReviews > 0) {
-         product.rating =
-            product.reviews.reduce((acc, item) => item.rating + acc, 0) /
-            product.reviews.length;
-      } else {
-         product.rating = 0;
-      }
+      updateProductRatingSummary(product);
 
       await product.save();
       clearCache();

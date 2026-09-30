@@ -8,7 +8,10 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 
+import { useCustomModal } from '../../context/CustomModalContext';
+
 export default function AdminPurchaseOrders() {
+   const { showAlert } = useCustomModal();
    const [pos, setPos] = useState([]);
    const [suppliers, setSuppliers] = useState([]);
    const [products, setProducts] = useState([]);
@@ -132,6 +135,7 @@ export default function AdminPurchaseOrders() {
       try {
          await api.post('/purchase-orders', poForm);
          setShowCreateModal(false);
+         showAlert('Purchase Order issued successfully.', 'Stock Procurement', 'success');
          setPoForm({
             supplierId: '',
             expectedDate: '',
@@ -140,7 +144,7 @@ export default function AdminPurchaseOrders() {
          });
          fetchPOs();
       } catch (err) {
-         alert(err.response?.data?.message || 'Failed to create purchase order');
+         showAlert(err.response?.data?.message || 'Failed to create purchase order', 'PO Generation Error', 'error');
       } finally {
          setSubmitting(false);
       }

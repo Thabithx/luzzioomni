@@ -93,16 +93,27 @@ export function Reviews({ productId, reviews = [], onReviewAdded, onReviewDelete
       }
    };
 
+   const [updatingStatus, setUpdatingStatus] = useState(null);
+
+   const handleStatusUpdate = async (reviewId, newStatus) => {
+      try {
+         setUpdatingStatus(reviewId);
+         await api.put(`/products/${productId}/reviews/${reviewId}/status`, { status: newStatus });
+         window.location.reload();
+      } catch (err) {
+         console.error('Failed to update review status:', err);
+         alert(err.response?.data?.message || 'Failed to update review moderation status');
+      } finally {
+         setUpdatingStatus(null);
+      }
+   };
+
    const handleDeleteReview = async (reviewId) => {
       if (!window.confirm('Are you sure you want to delete this review?')) return;
 
       try {
          setIsDeleting(reviewId);
          await api.delete(`/products/${productId}/reviews/${reviewId}`);
-         // We need to trigger an update - since Reviews is controlled by parent ProductDetail, 
-         // we should ideally have an onReviewDeleted prop or just refresh product.
-         // For now, let's assume the parent handles it if we can - but ProductDetail only has onReviewAdded.
-         // Let's reload page as a quick fix or if you want it smoother, we need parent update.
          window.location.reload();
       } catch (err) {
          console.error('Failed to delete review:', err);
@@ -142,127 +153,178 @@ export function Reviews({ productId, reviews = [], onReviewAdded, onReviewDelete
          {/* WRITE REVIEW FORM */}
          {isWritingReview && (
             <div className="animate-in fade-in slide-in-from-top-4 duration-500 bg-gray-50/50 p-4 md:p-8 border border-black/5">
-               <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Rating */}
-                  <div className="flex justify-center gap-1.5">
-                     {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                           key={star}
-                           type="button"
-                           onMouseEnter={() => setHoverRating(star)}
-                           onMouseLeave={() => setHoverRating(0)}
-                           onClick={() => setFormData({ ...formData, rating: star })}
-                           className="transition-transform hover:scale-110 focus:outline-none"
-                        >
-                           <Star
-                              size={18}
-                              className={cn(
-                                 "transition-colors",
-                                 (hoverRating || formData.rating) >= star
-                                    ? "fill-black text-black"
-                                    : "text-gray-200"
-                              )}
-                              strokeWidth={0}
-                           />
-                        </button>
-                     ))}
+               {success ? (
+                  <div className="bg-green-50 border border-green-500 text-green-800 p-4 text-center space-y-1">
+                     <p className="text-xs font-black uppercase tracking-wider">Review Submitted Successfully</p>
+                     <p className="text-[10px] font-mono">
+                        {isAdmin ? 'Your review is published.' : 'Your review is pending moderation approval.'}
+                     </p>
                   </div>
-
-                  {/* Input Fields */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                     <Input
-                        value={formData.name}
-                        onChange={e => setFormData({ ...formData, name: e.target.value })}
-                        placeholder="Name"
-                        className="bg-white border-gray-200 text-xs py-2 h-10"
-                        required
-                     />
-                     <Input
-                        type="email"
-                        value={formData.email}
-                        onChange={e => setFormData({ ...formData, email: e.target.value })}
-                        placeholder="Email"
-                        className="bg-white border-gray-200 text-xs py-2 h-10"
-                        required
-                     />
-                  </div>
-                  <textarea
-                     value={formData.comment}
-                     onChange={e => setFormData({ ...formData, comment: e.target.value })}
-                     placeholder="Share your experience..."
-                     className="w-full bg-white border border-gray-200 p-3 text-xs min-h-[80px] focus:border-black focus:ring-0 transition-colors resize-none"
-                     required
-                  />
-
-                  {/* Image Upload */}
-                  <div className="flex gap-3 items-center">
-                     <div className="w-10 h-10 border border-dashed border-gray-300 flex items-center justify-center relative hover:border-black cursor-pointer bg-white transition-colors">
-                        {uploading ? <Loader2 className="animate-spin w-3 h-3" /> : <Upload size={14} className="text-gray-400" />}
-                        <input type="file" multiple accept="image/*" onChange={handleUpload} className="absolute inset-0 opacity-0 cursor-pointer" disabled={uploading} />
-                     </div>
-                     <div className="flex gap-2 overflow-x-auto">
-                        {formData.images.map((img, i) => (
-                           <div key={i} className="w-10 h-10 relative group flex-shrink-0">
-                              <img src={img} alt="" className="w-full h-full object-cover grayscale" />
-                              <button
-                                 type="button"
-                                 onClick={() => setFormData(prev => ({ ...prev, images: prev.images.filter((_, idx) => idx !== i) }))}
-                                 className="absolute -top-1 -right-1 bg-black text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
-                              >
-                                 <X size={8} />
-                              </button>
-                           </div>
+               ) : (
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                     {/* Rating */}
+                     <div className="flex justify-center gap-1.5">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                           <button
+                              key={star}
+                              type="button"
+                              onMouseEnter={() => setHoverRating(star)}
+                              onMouseLeave={() => setHoverRating(0)}
+                              onClick={() => setFormData({ ...formData, rating: star })}
+                              className="transition-transform hover:scale-110 focus:outline-none"
+                           >
+                              <Star
+                                 size={18}
+                                 className={cn(
+                                    "transition-colors",
+                                    (hoverRating || formData.rating) >= star
+                                       ? "fill-black text-black"
+                                       : "text-gray-200"
+                                 )}
+                                 strokeWidth={0}
+                              />
+                           </button>
                         ))}
                      </div>
-                  </div>
 
-                  <Button
-                     type="submit"
-                     disabled={submitting || uploading}
-                     className="w-full bg-black text-white hover:bg-stone-800 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] py-3"
-                  >
-                     {submitting ? 'Processing...' : success ? 'Submitted' : 'Post Review'}
-                  </Button>
-               </form>
+                     {/* Input Fields */}
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Input
+                           value={formData.name}
+                           onChange={e => setFormData({ ...formData, name: e.target.value })}
+                           placeholder="Name"
+                           className="bg-white border-gray-200 text-xs py-2 h-10"
+                           required
+                        />
+                        <Input
+                           type="email"
+                           value={formData.email}
+                           onChange={e => setFormData({ ...formData, email: e.target.value })}
+                           placeholder="Email"
+                           className="bg-white border-gray-200 text-xs py-2 h-10"
+                           required
+                        />
+                     </div>
+                     <textarea
+                        value={formData.comment}
+                        onChange={e => setFormData({ ...formData, comment: e.target.value })}
+                        placeholder="Share your experience..."
+                        className="w-full bg-white border border-gray-200 p-3 text-xs min-h-[80px] focus:border-black focus:ring-0 transition-colors resize-none"
+                        required
+                     />
+
+                     {/* Image Upload */}
+                     <div className="flex gap-3 items-center">
+                        <div className="w-10 h-10 border border-dashed border-gray-300 flex items-center justify-center relative hover:border-black cursor-pointer bg-white transition-colors">
+                           {uploading ? <Loader2 className="animate-spin w-3 h-3" /> : <Upload size={14} className="text-gray-400" />}
+                           <input type="file" multiple accept="image/*" onChange={handleUpload} className="absolute inset-0 opacity-0 cursor-pointer" disabled={uploading} />
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto">
+                           {formData.images.map((img, i) => (
+                              <div key={i} className="w-10 h-10 relative group flex-shrink-0">
+                                 <img src={img} alt="" className="w-full h-full object-cover grayscale" />
+                                 <button
+                                    type="button"
+                                    onClick={() => setFormData(prev => ({ ...prev, images: prev.images.filter((_, idx) => idx !== i) }))}
+                                    className="absolute -top-1 -right-1 bg-black text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-full"
+                                 >
+                                    <X size={8} />
+                                 </button>
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+
+                     <Button
+                        type="submit"
+                        disabled={submitting || uploading}
+                        className="w-full bg-black text-white hover:bg-stone-800 text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] py-3"
+                     >
+                        {submitting ? 'Processing...' : 'Post Review'}
+                     </Button>
+                  </form>
+               )}
             </div>
          )}
 
          {/* REVIEWS LIST */}
          <div className="space-y-6">
-            {sortedReviews.map((review, i) => (
-               <div key={i} className="flex flex-col gap-2 pb-6 border-b border-gray-100 last:border-0 fade-in relative group">
-                  {/* Admin Deletion */}
-                  {isAdmin && (
-                     <button
-                        onClick={() => handleDeleteReview(review._id)}
-                        disabled={isDeleting === review._id}
-                        className="absolute top-0 right-0 p-2 text-black/20 hover:text-red-500 transition-colors"
-                        title="Delete Review"
-                     >
-                        {isDeleting === review._id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                     </button>
-                  )}
+            {sortedReviews.map((review, i) => {
+               const reviewStatus = review.status || 'approved';
+               return (
+                  <div key={i} className="flex flex-col gap-2 pb-6 border-b border-gray-100 last:border-0 fade-in relative group">
+                     {/* Moderation Controls Header for Admin */}
+                     {isAdmin && (
+                        <div className="flex items-center justify-between bg-gray-100 p-2 border border-black mb-2 text-xs">
+                           <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] uppercase font-bold text-gray-500">Moderation Status:</span>
+                              <span className={cn(
+                                 "px-2 py-0.5 text-[9px] font-black uppercase border",
+                                 reviewStatus === 'approved' && "bg-green-100 border-green-600 text-green-700",
+                                 reviewStatus === 'pending' && "bg-amber-100 border-amber-600 text-amber-700",
+                                 reviewStatus === 'rejected' && "bg-red-100 border-red-600 text-red-700"
+                              )}>
+                                 {reviewStatus}
+                              </span>
+                           </div>
 
-                  {/* Rating Stars */}
-                  <div className="flex gap-0.5">
-                     {[...Array(5)].map((_, i) => (
-                        <Star key={i} size={16} className={i < review.rating ? "fill-black text-black" : "text-gray-200"} strokeWidth={0} />
-                     ))}
-                  </div>
+                           <div className="flex items-center gap-1">
+                              {reviewStatus !== 'approved' && (
+                                 <button
+                                    onClick={() => handleStatusUpdate(review._id, 'approved')}
+                                    disabled={updatingStatus === review._id}
+                                    className="bg-green-600 text-white text-[9px] font-black uppercase px-2.5 py-1 hover:bg-green-700"
+                                 >
+                                    Approve
+                                 </button>
+                              )}
+                              {reviewStatus !== 'rejected' && (
+                                 <button
+                                    onClick={() => handleStatusUpdate(review._id, 'rejected')}
+                                    disabled={updatingStatus === review._id}
+                                    className="bg-amber-600 text-white text-[9px] font-black uppercase px-2.5 py-1 hover:bg-amber-700"
+                                 >
+                                    Reject
+                                 </button>
+                              )}
+                              <button
+                                 onClick={() => handleDeleteReview(review._id)}
+                                 disabled={isDeleting === review._id}
+                                 className="bg-red-600 text-white text-[9px] font-black uppercase px-2.5 py-1 hover:bg-red-700 ml-2"
+                              >
+                                 Delete
+                              </button>
+                           </div>
+                        </div>
+                     )}
 
-                  {/* User Info Line */}
-                  <div className="flex items-center gap-2">
-                     <span className="text-[14px] md:text-[16px] font-bold text-black tracking-tight">{review.name || "Anonymous"}</span>
-                     <div className="flex items-center gap-0.5 bg-black text-white px-1.5 py-[2px] rounded-[1px]">
-                        <Check size={10} strokeWidth={4} />
-                        <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest leading-none">Verified</span>
+                     {/* Rating Stars */}
+                     <div className="flex gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                           <Star key={i} size={16} className={i < review.rating ? "fill-black text-black" : "text-gray-200"} strokeWidth={0} />
+                        ))}
                      </div>
-                  </div>
 
-                  {/* Comment */}
-                  <div className="text-black/80 font-normal leading-relaxed text-[13px] md:text-[14px]">
-                     <p>{review.comment}</p>
-                  </div>
+                     {/* User Info Line */}
+                     <div className="flex items-center gap-2">
+                        <span className="text-[14px] md:text-[16px] font-bold text-black tracking-tight">{review.name || "Anonymous"}</span>
+                        {review.isVerified && (
+                           <div className="flex items-center gap-0.5 bg-black text-white px-1.5 py-[2px] rounded-[1px]">
+                              <Check size={10} strokeWidth={4} />
+                              <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest leading-none">Verified</span>
+                           </div>
+                        )}
+                        {!isAdmin && reviewStatus === 'pending' && (
+                           <span className="text-[9px] font-mono text-amber-600 bg-amber-50 border border-amber-300 px-1.5 py-0.5 font-bold uppercase">
+                              Pending Approval
+                           </span>
+                        )}
+                     </div>
+
+                     {/* Comment */}
+                     <div className="text-black/80 font-normal leading-relaxed text-[13px] md:text-[14px]">
+                        <p>{review.comment}</p>
+                     </div>
 
                   {/* Date & Review Images Footer */}
                   <div className="flex flex-col gap-3">

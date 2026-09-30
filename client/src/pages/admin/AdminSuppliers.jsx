@@ -8,7 +8,10 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 
+import { useCustomModal } from '../../context/CustomModalContext';
+
 export default function AdminSuppliers() {
+   const { showAlert, showConfirm } = useCustomModal();
    const [suppliers, setSuppliers] = useState([]);
    const [loading, setLoading] = useState(false);
    const [search, setSearch] = useState('');
@@ -99,24 +102,33 @@ export default function AdminSuppliers() {
       try {
          if (editingSupplier) {
             await api.put(`/suppliers/${editingSupplier._id}`, formData);
+            showAlert('Supplier profile updated successfully.', 'Supplier Directory', 'success');
          } else {
             await api.post('/suppliers', formData);
+            showAlert('New supplier registered successfully.', 'Supplier Directory', 'success');
          }
          setShowModal(false);
          fetchSuppliers();
       } catch (err) {
-         alert(err.response?.data?.message || 'Failed to save supplier');
+         showAlert(err.response?.data?.message || 'Failed to save supplier profile.', 'Supplier Registration Error', 'error');
       }
    };
 
    const handleDelete = async (id) => {
-      if (!window.confirm('Are you sure you want to remove this supplier?')) return;
-      try {
-         await api.delete(`/suppliers/${id}`);
-         fetchSuppliers();
-      } catch (err) {
-         alert(err.response?.data?.message || 'Failed to delete supplier');
-      }
+      showConfirm(
+         'Are you sure you want to permanently remove this supplier profile from the directory?',
+         async () => {
+            try {
+               await api.delete(`/suppliers/${id}`);
+               showAlert('Supplier removed successfully.', 'Supplier Directory', 'success');
+               fetchSuppliers();
+            } catch (err) {
+               showAlert(err.response?.data?.message || 'Failed to delete supplier.', 'Deletion Error', 'error');
+            }
+         },
+         'Confirm Supplier Removal',
+         { confirmText: 'Remove Supplier', type: 'warning' }
+      );
    };
 
    return (
