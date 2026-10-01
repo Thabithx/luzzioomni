@@ -94,7 +94,7 @@ exports.getInventory = async (req, res) => {
       }
 
       if (lowStock === 'true') {
-         query.stock = { $lte: 10 };
+         query.$expr = { $lte: ['$stock', { $ifNull: ['$lowStockThreshold', 10] }] };
       }
 
       const total = await Product.countDocuments(query);
@@ -131,10 +131,19 @@ exports.adjustStock = async (req, res) => {
          });
       }
 
+      let numChange = Number(quantityChange);
+      if (transactionType === 'DAMAGED' || transactionType === 'LOST') {
+         // DAMAGED and LOST reduce central inventory stock
+         numChange = -Math.abs(numChange);
+      } else if (transactionType === 'RESTOCK') {
+         // RESTOCK increases central inventory stock
+         numChange = Math.abs(numChange);
+      }
+
       const result = await updateCentralInventory({
          productId,
          variantSize: variantSize || '',
-         quantityChange: Number(quantityChange),
+         quantityChange: numChange,
          transactionType,
          source: 'ADMIN',
          performedBy: req.user ? req.user._id : null,
@@ -157,7 +166,7 @@ exports.adjustStock = async (req, res) => {
 // @access  Private (Admin / Warehouse)
 exports.getInventoryHistory = async (req, res) => {
    try {
-      const { productId, transactionType, page = 1, limit = 30 } = req.query;
+      const { productId, transactionType, page = 1, limit = 50 } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
       const query = {};
 
@@ -181,6 +190,65 @@ exports.getInventoryHistory = async (req, res) => {
       });
    } catch (error) {
       console.error('getInventoryHistory error:', error);
+      res.status(500).json({ success: false, message: error.message });
+   }
+};
+
+// DULARA: Stock Valuation & Inventory Movement Reports
+// @desc    Get Stock Valuation & Inventory Movement Report Summary
+// @route   GET /api/inventory/report
+// @access  Private (Admin / Warehouse)
+exports.getInventoryReport = async (req, res) => {
+   try {
+      const products = await Product.find({}).populate('categories', 'name');
+
+      let totalStockCount = 0;
+      let totalStockValuation = 0;
+      let lowStockCount = 0;
+
+      const valuationByCategory = {};
+
+      products.forEach(p => {
+         const currentStock = p.stock || 0;
+         const threshold = p.lowStockThreshold || 5;
+         const itemValuation = currentStock * (p.salePrice > 0 ? p.salePrice : p.price);
+
+         totalStockCount += currentStock;
+         totalStockValuation += itemValuation;
+
+         if (currentStock <= threshold) {
+            lowStockCount++;
+         }
+
+         const catName = p.categories && p.categories[0] ? p.categories[0].name : 'Uncategorized';
+         if (!valuationByCategory[catName]) {
+            valuationByCategory[catName] = { count: 0, stock: 0, valuation: 0 };
+         }
+         valuationByCategory[catName].count += 1;
+         valuationByCategory[catName].stock += currentStock;
+         valuationByCategory[catName].valuation += itemValuation;
+      });
+
+      const totalMovementCount = await InventoryTransaction.countDocuments({});
+      const recentMovements = await InventoryTransaction.find({})
+         .populate('product', 'name sku price')
+         .sort({ timestamp: -1 })
+         .limit(10);
+
+      res.status(200).json({
+         success: true,
+         data: {
+            totalProducts: products.length,
+            totalStockCount,
+            totalStockValuation,
+            lowStockCount,
+            totalMovementCount,
+            valuationByCategory,
+            recentMovements
+         }
+      });
+   } catch (error) {
+      console.error('getInventoryReport error:', error);
       res.status(500).json({ success: false, message: error.message });
    }
 };

@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 import { firstError, isBlank } from '../../utils/formValidate';
+import { useToast } from '../../components/ui/Toast';
 
 export default function AdminInventory() {
    const [activeTab, setActiveTab] = useState('registry'); // 'registry' | 'history' | 'reports'
@@ -18,6 +19,7 @@ export default function AdminInventory() {
    const [loading, setLoading] = useState(false);
    const [search, setSearch] = useState('');
    const [lowStockFilter, setLowStockFilter] = useState(false);
+   const { showToast } = useToast();
 
    // Manual adjustment modal state
    const [showAdjustModal, setShowAdjustModal] = useState(false);
@@ -112,7 +114,7 @@ export default function AdminInventory() {
    const handleAdjustSubmit = async (e) => {
       e.preventDefault();
 
-      const qty = Number(adjustData.quantityChange);
+      let qty = Number(adjustData.quantityChange);
       const error = firstError([
          { condition: !selectedProduct,                   message: 'No product selected' },
          { condition: isBlank(adjustData.transactionType), message: 'Please select a transaction type' },
@@ -121,8 +123,14 @@ export default function AdminInventory() {
       ]);
 
       if (error) {
-         alert(error);
+         showToast(error, 'warning');
          return;
+      }
+
+      if (adjustData.transactionType === 'DAMAGED' || adjustData.transactionType === 'LOST') {
+         qty = -Math.abs(qty);
+      } else if (adjustData.transactionType === 'RESTOCK') {
+         qty = Math.abs(qty);
       }
 
       setSubmittingAdjust(true);
@@ -137,12 +145,14 @@ export default function AdminInventory() {
 
          setShowAdjustModal(false);
          fetchInventory();
+         showToast('Stock adjustment applied successfully.', 'success');
       } catch (err) {
-         alert(err.response?.data?.message || 'Stock adjustment failed');
+         showToast(err.response?.data?.message || 'Stock adjustment failed.', 'error');
       } finally {
          setSubmittingAdjust(false);
       }
    };
+
 
    return (
       <div className="space-y-8">
@@ -470,7 +480,11 @@ export default function AdminInventory() {
 
                      <div>
                         <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">
-                           Quantity Change (+ for increase, - for decrease)
+                           {adjustData.transactionType === 'DAMAGED' || adjustData.transactionType === 'LOST'
+                              ? 'Units Lost / Damaged (Will be subtracted from stock)'
+                              : adjustData.transactionType === 'RESTOCK'
+                              ? 'Units Restocked (Will be added to stock)'
+                              : 'Quantity Change (+ for increase, - for decrease)'}
                         </label>
                         <Input
                            type="number"
