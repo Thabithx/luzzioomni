@@ -8,6 +8,9 @@ import { useAuth } from '../../context/AuthContext';
 import { DndContext, closestCenter, MouseSensor, TouchSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { firstError, isBlank, isPositive, isNonNeg } from '../../utils/formValidate';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmModal';
 
 const SortableImage = ({ url, index, onRemove }) => {
    const {
@@ -90,7 +93,9 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
       sizeChart: ''
    });
    const [uploading, setUploading] = useState(false);
+   const [formError, setFormError] = useState('');
    const { token } = useAuth();
+   const { showToast } = useToast();
 
    // dnd-kit sensors
    const sensors = useSensors(
@@ -147,6 +152,7 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
             sizeChart: ''
          });
       }
+      setFormError('');
    }, [product, isOpen, categories]);
 
    if (!isOpen) return null;
@@ -157,7 +163,7 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
 
       const currentImages = formData.images.filter(img => img !== '');
       if (currentImages.length + files.length > 10) {
-         alert('Maximum 10 images allowed per product');
+         showToast('Maximum 10 images allowed per product.', 'warning');
          return;
       }
 
@@ -181,7 +187,7 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
          });
       } catch (err) {
          console.error('Asset upload failed:', err);
-         alert('FAILED TO UPLOAD ARCHIVE ASSET: ' + (err.response?.data?.message || err.message));
+         showToast('Failed to upload product image: ' + (err.response?.data?.message || err.message), 'error');
       } finally {
          setUploading(false);
       }
@@ -205,9 +211,35 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
 
    const handleSubmit = (e) => {
       e.preventDefault();
+      setFormError('');
 
       // Calculate total stock from variants
       const totalStock = formData.variants?.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0) || 0;
+
+      // Validate
+      const error = firstError([
+         { condition: isBlank(formData.name),        message: 'Product name is required' },
+         { condition: isBlank(formData.description), message: 'Product description is required' },
+         { condition: !isPositive(formData.price),   message: 'Price must be a positive number' },
+         {
+            condition: formData.salePrice !== '' && formData.salePrice !== undefined && !isNonNeg(formData.salePrice),
+            message: 'Sale price cannot be negative'
+         },
+         {
+            condition: formData.salePrice !== '' && formData.salePrice !== undefined &&
+               Number(formData.salePrice) >= Number(formData.price),
+            message: 'Sale price must be less than the regular price'
+         },
+         {
+            condition: formData.variants?.some(v => (parseInt(v.stock) || 0) < 0),
+            message: 'Variant stock quantities cannot be negative'
+         },
+      ]);
+
+      if (error) {
+         setFormError(error);
+         return;
+      }
 
       // Prepare payload with number versions of stock
       const payload = {
@@ -252,6 +284,8 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
                      <label className="text-small-brand text-gray-400">Acquisition Price (LKR)</label>
                      <Input
                         type="number"
+                        min="0.01"
+                        step="0.01"
                         value={formData.price}
                         onChange={e => setFormData({ ...formData, price: e.target.value })}
                         required
@@ -330,6 +364,8 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
                      <label className="text-small-brand text-gray-400">Market Value / Sale Price (LKR)</label>
                      <Input
                         type="number"
+                        min="0"
+                        step="0.01"
                         value={formData.salePrice}
                         onChange={e => setFormData({ ...formData, salePrice: e.target.value })}
                         placeholder="Leave empty for no discount"
@@ -383,6 +419,7 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
                                  <span className="text-[10px] font-black uppercase w-8">{variant.size}</span>
                                  <Input
                                     type="number"
+                                    min="0"
                                     placeholder="QTY"
                                     value={variant.stock}
                                     onChange={(e) => {
@@ -474,7 +511,7 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
                                        });
                                        setFormData({ ...formData, sizeChart: res.data.files[0].url });
                                     } catch (err) {
-                                       alert('Upload failed');
+                                       showToast('Size chart upload failed.', 'error');
                                     } finally {
                                        setUploading(false);
                                     }
@@ -599,13 +636,20 @@ const ProductModal = ({ isOpen, onClose, product, onSave, categories }) => {
                   </div>
                </div>
 
-               <div className="pt-8 border-t border-black flex justify-end gap-1">
-                  <button type="button" onClick={onClose} className="px-10 py-5 text-[10px] font-black uppercase tracking-[0.2em] border border-black hover:bg-black hover:text-white transition-all">
-                     Abandon
-                  </button>
-                  <button type="submit" className="btn-brand px-12 py-5 font-black uppercase tracking-[0.2em]" disabled={uploading}>
-                     {product ? 'Authorize Update' : 'Initialize Entry'}
-                  </button>
+               <div className="pt-8 border-t border-black flex flex-col gap-3">
+                  {formError && (
+                     <p className="text-red-600 text-[11px] font-bold uppercase tracking-widest bg-red-50 border border-red-200 p-3">
+                        ⚠ {formError}
+                     </p>
+                  )}
+                  <div className="flex justify-end gap-1">
+                     <button type="button" onClick={onClose} className="px-10 py-5 text-[10px] font-black uppercase tracking-[0.2em] border border-black hover:bg-black hover:text-white transition-all">
+                        Abandon
+                     </button>
+                     <button type="submit" className="btn-brand px-12 py-5 font-black uppercase tracking-[0.2em]" disabled={uploading}>
+                        {product ? 'Authorize Update' : 'Initialize Entry'}
+                     </button>
+                  </div>
                </div>
             </form>
          </div>
@@ -620,6 +664,8 @@ const AdminProducts = () => {
    const [editingProduct, setEditingProduct] = useState(null);
    const [searchTerm, setSearchTerm] = useState('');
    const { token } = useAuth();
+   const { showToast } = useToast();
+   const confirm = useConfirm();
 
    const fetchData = async () => {
       try {
@@ -631,7 +677,7 @@ const AdminProducts = () => {
          setCategories(catRes.data.data);
       } catch (err) {
          console.error('Archive retrieval failed:', err);
-         alert('FAILED TO RETRIEVE ARCHIVE: ' + (err.response?.data?.message || err.message));
+         showToast('Failed to retrieve products catalog: ' + (err.response?.data?.message || err.message), 'error');
       }
    };
 
@@ -651,26 +697,35 @@ const AdminProducts = () => {
 
          if (editingProduct) {
             await api.put(`/products/${editingProduct._id}`, dataToSave);
+            showToast('Product updated successfully.', 'success');
          } else {
             await api.post('/products', dataToSave);
+            showToast('Product created successfully.', 'success');
          }
          setIsModalOpen(false);
          setEditingProduct(null);
          fetchData();
       } catch (err) {
          console.error('Archive synchronization failed:', err);
-         alert('ARCHIVE SYNCHRONIZATION FAILED: ' + (err.response?.data?.message || err.message));
+         showToast('Failed to save product: ' + (err.response?.data?.message || err.message), 'error');
       }
    };
 
    const handleDelete = async (id) => {
-      if (window.confirm('Confirm permanent deletion?')) {
-         try {
-            await api.delete(`/products/${id}`);
-            fetchData();
-         } catch (err) {
-            console.error('De-archiving failed:', err);
-         }
+      const yes = await confirm({
+         title: 'Delete Product',
+         message: 'This will permanently remove this product from the catalog. This action cannot be undone.',
+         confirmLabel: 'Delete Product',
+         danger: true
+      });
+      if (!yes) return;
+      try {
+         await api.delete(`/products/${id}`);
+         fetchData();
+         showToast('Product deleted successfully.', 'success');
+      } catch (err) {
+         console.error('De-archiving failed:', err);
+         showToast('Failed to delete product: ' + (err.response?.data?.message || err.message), 'error');
       }
    };
 

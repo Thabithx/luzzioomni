@@ -5,6 +5,8 @@ import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../utils/cn';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmModal';
 
 const CategoryModal = ({ isOpen, onClose, category, onSave }) => {
    const [formData, setFormData] = useState({
@@ -98,6 +100,8 @@ const AdminCategories = () => {
    const [searchTerm, setSearchTerm] = useState('');
    const [hasOrderChanges, setHasOrderChanges] = useState(false);
    const { token } = useAuth();
+   const { showToast } = useToast();
+   const confirm = useConfirm();
 
    const fetchCategories = async () => {
       try {
@@ -128,13 +132,20 @@ const AdminCategories = () => {
    };
 
    const handleDelete = async (id) => {
-      if (window.confirm('PROTOCOL: PERMANENT CLASSIFICATION REMOVAL. PROCEED?')) {
-         try {
-            await api.delete(`/categories/${id}`);
-            fetchCategories();
-         } catch (err) {
-            console.error('De-classification failed:', err);
-         }
+      const yes = await confirm({
+         title: 'Remove Classification',
+         message: 'This will permanently delete this category. Products in this category may become uncategorized.',
+         confirmLabel: 'Delete Category',
+         danger: true
+      });
+      if (!yes) return;
+      try {
+         await api.delete(`/categories/${id}`);
+         fetchCategories();
+         showToast('Category removed successfully.', 'success');
+      } catch (err) {
+         console.error('De-classification failed:', err);
+         showToast('Failed to remove category.', 'error');
       }
    };
 
@@ -163,12 +174,13 @@ const AdminCategories = () => {
 
          await api.post('/categories/reorder', { orders });
          setHasOrderChanges(false);
-         alert('Display order synchronized successfully.');
+         showToast('Display order synchronized successfully.', 'success');
       } catch (err) {
          console.error('Order synchronization failed:', err);
-         alert('Failed to synchronize display order.');
+         showToast('Failed to synchronize display order.', 'error');
       }
    };
+
 
    return (
       <div className="space-y-12 pb-40">

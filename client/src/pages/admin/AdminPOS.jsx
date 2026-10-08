@@ -3,14 +3,18 @@
 // walk-in / registered customer checkout, discount/tax calculations, and instant receipt generation.
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Minus, Trash2, User, CreditCard, DollarSign, CheckCircle, Printer, X, RefreshCw, Barcode } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, User, CreditCard, DollarSign, CheckCircle, Printer, X, RefreshCw, Barcode, FileSpreadsheet } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../components/ui/Toast';
+import { exportMultiSheetExcelReport } from '../../utils/excelExporter';
+
 
 export default function AdminPOS() {
    const { user } = useAuth();
+   const { showToast } = useToast();
    const [products, setProducts] = useState([]);
    const [searchQuery, setSearchQuery] = useState('');
    const [loadingProducts, setLoadingProducts] = useState(false);
@@ -66,7 +70,7 @@ export default function AdminPOS() {
       }
 
       if (availableStock <= 0) {
-         alert(`Stock depleted for '${product.name}' (${sizeToUse || 'All'})`);
+         showToast(`Stock depleted for '${product.name}' (${sizeToUse || 'All'}).`, 'warning');
          return;
       }
 
@@ -74,7 +78,7 @@ export default function AdminPOS() {
       if (existingIndex > -1) {
          const currentQty = cart[existingIndex].qty;
          if (currentQty + 1 > availableStock) {
-            alert(`Cannot add more than available stock (${availableStock})`);
+            showToast(`Cannot add more than available stock (${availableStock}).`, 'warning');
             return;
          }
          const updated = [...cart];
@@ -103,7 +107,7 @@ export default function AdminPOS() {
       if (newQty <= 0) {
          updated.splice(index, 1);
       } else if (newQty > updated[index].maxStock) {
-         alert(`Stock limit reached (${updated[index].maxStock})`);
+         showToast(`Stock limit reached (${updated[index].maxStock}).`, 'warning');
       } else {
          updated[index].qty = newQty;
       }
@@ -139,22 +143,24 @@ export default function AdminPOS() {
          setSelectedCustomer(res.data.data);
          setShowCustomerModal(false);
          setNewCustomer({ name: '', phone: '', email: '' });
+         showToast('Customer profile created.', 'success');
       } catch (err) {
-         alert(err.response?.data?.message || 'Failed to create customer');
+         showToast(err.response?.data?.message || 'Failed to create customer.', 'error');
       }
    };
 
    // Complete Sale
    const handleCheckout = async () => {
       if (cart.length === 0) {
-         alert('Cart is empty');
+         showToast('Cart is empty. Add products before checking out.', 'warning');
          return;
       }
 
       if (paymentMethod === 'CASH' && Number(cashTendered) < grandTotal) {
-         alert(`Cash tendered (Rs. ${cashTendered}) is less than total (Rs. ${grandTotal})`);
+         showToast(`Cash tendered (Rs. ${cashTendered}) is less than total (Rs. ${grandTotal.toFixed(2)}).`, 'warning');
          return;
       }
+
 
       setProcessing(true);
       setErrorMessage('');
@@ -192,6 +198,26 @@ export default function AdminPOS() {
       }
    };
 
+   const exportPOSExcelReport = async () => {
+      try {
+         showToast('Generating POS transaction audit report...', 'info');
+         const res = await api.get('/analytics/comprehensive-report');
+         if (res.data.success && res.data.data) {
+            const { summaryData, inventoryData, posSalesData } = res.data.data;
+            exportMultiSheetExcelReport({
+               summaryData,
+               inventoryData,
+               posSalesData,
+               filename: `Luzzio_POS_Sales_Audit_${new Date().toISOString().slice(0, 10)}.xlsx`
+            });
+            showToast('POS sales audit report generated successfully!', 'success');
+         }
+      } catch (err) {
+         console.error('Failed to export POS report:', err);
+         showToast('Failed to export POS report.', 'error');
+      }
+   };
+
    return (
       <div className="space-y-8">
          {/* Top Banner / Header */}
@@ -203,13 +229,21 @@ export default function AdminPOS() {
                </div>
                <h1 className="text-2xl font-black uppercase tracking-tight mt-1">POS Checkout Terminal</h1>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-4">
+               <button
+                  onClick={exportPOSExcelReport}
+                  className="bg-white text-black text-[10px] font-black uppercase tracking-widest px-4 py-2.5 hover:bg-gray-200 transition-all flex items-center gap-2 border border-white"
+               >
+                  <FileSpreadsheet size={14} />
+                  Export POS Sales (.XLSX)
+               </button>
                <div className="text-right">
                   <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Authorized Cashier</p>
                   <p className="text-xs font-black uppercase tracking-wider text-white">{user?.name || 'Staff User'}</p>
                </div>
             </div>
          </div>
+
 
          {errorMessage && (
             <div className="p-4 bg-red-50 border border-red-600 text-red-600 text-xs font-black uppercase tracking-wider">
