@@ -10,7 +10,6 @@ import { useAuth } from '../context/AuthContext';
 import Meta from '../components/ui/Meta';
 import { Lock, ArrowRight, ChevronLeft } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { KokoWidget } from '../components/ui/KokoWidget';
 import { SearchableSelect } from '../components/ui/SearchableSelect';
 
 
@@ -462,7 +461,6 @@ export function Checkout() {
                            <span className="text-small-brand font-black">Total Due</span>
                            <span className="text-2xl font-black tracking-tighter">LKR {totalPrice.toLocaleString()}.00</span>
                         </div>
-                        <KokoWidget price={totalPrice} className="pt-4 justify-end" />
                      </div>
 
                   </div>
