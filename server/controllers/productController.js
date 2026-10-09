@@ -352,8 +352,7 @@ exports.getAllReviewsAdmin = async (req, res) => {
 exports.moderateProductReview = async (req, res) => {
    try {
       const { isApproved, adminResponse } = req.body;
-      // Route is /:id/reviews/:reviewId/moderate — param is 'id', not 'productId'
-      const product = await Product.findById(req.params.id);
+      const product = await Product.findById(req.params.productId);
 
       if (!product) {
          return res.status(404).json({ success: false, message: 'Product not found' });

@@ -72,12 +72,16 @@ const productSchema = new mongoose.Schema({
       type: String,
       trim: true
    },
+   lowStockThreshold: {
+      type: Number,
+      default: 5
+   },
    reviews: [
       {
          user: {
             type: mongoose.Schema.ObjectId,
             ref: 'User',
-            required: false // Allow guest reviews possibly or require auth
+            required: false
          },
          name: { type: String, required: true },
          email: { type: String, required: true },
@@ -85,11 +89,8 @@ const productSchema = new mongoose.Schema({
          comment: { type: String, required: true },
          images: { type: [String], default: [] },
          isVerified: { type: Boolean, default: false },
-         status: {
-            type: String,
-            enum: ['pending', 'approved', 'rejected'],
-            default: 'pending'
-         },
+         isApproved: { type: Boolean, default: true },
+         adminResponse: { type: String, default: '' },
          createdAt: { type: Date, default: Date.now }
       }
    ],
