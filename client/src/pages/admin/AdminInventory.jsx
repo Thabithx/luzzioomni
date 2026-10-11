@@ -3,7 +3,7 @@
 // and auditable stock movement history ledger.
 
 import React, { useState, useEffect } from 'react';
-import { Search, Boxes, AlertTriangle, RefreshCw, Plus, History, ArrowUpRight, ArrowDownRight, FileSpreadsheet } from 'lucide-react';
+import { Search, Boxes, AlertTriangle, RefreshCw, Plus, History, ArrowUpRight, ArrowDownRight, FileSpreadsheet, Printer, X, Tag } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
@@ -32,6 +32,12 @@ export default function AdminInventory() {
       notes: ''
    });
    const [submittingAdjust, setSubmittingAdjust] = useState(false);
+
+   // DULARA: Barcode & Shelf Label Printing State
+   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+   const [barcodeProduct, setBarcodeProduct] = useState(null);
+   const [barcodeSize, setBarcodeSize] = useState('ALL');
+   const [barcodeCopies, setBarcodeCopies] = useState(6);
 
    useEffect(() => {
       if (activeTab === 'registry') {
@@ -157,6 +163,17 @@ export default function AdminInventory() {
       }
    };
 
+   const openBarcodeModal = (product) => {
+      setSelectedProduct(product);
+      setBarcodeProduct(product);
+      setBarcodeSize(product.variants && product.variants.length > 0 ? product.variants[0].size : 'STD');
+      setBarcodeCopies(6);
+      setShowBarcodeModal(true);
+   };
+
+   const printBarcodeSheet = () => {
+      window.print();
+   };
 
    return (
       <div className="space-y-8">
@@ -296,12 +313,21 @@ export default function AdminInventory() {
                                     )}
                                  </td>
                                  <td className="p-4 text-right">
-                                    <Button
-                                       onClick={() => openAdjustModal(p)}
-                                       className="bg-black text-white text-[9px] font-black uppercase px-3 py-1.5"
-                                    >
-                                       <Plus size={12} className="mr-1 inline" /> Adjust Stock
-                                    </Button>
+                                    <div className="flex items-center justify-end gap-2">
+                                       <Button
+                                          onClick={() => openAdjustModal(p)}
+                                          className="bg-black text-white text-[9px] font-black uppercase px-3 py-1.5"
+                                       >
+                                          <Plus size={12} className="mr-1 inline" /> Adjust Stock
+                                       </Button>
+                                       <Button
+                                          onClick={() => openBarcodeModal(p)}
+                                          variant="outline"
+                                          className="border-black text-black hover:bg-black hover:text-white text-[9px] font-black uppercase px-2 py-1.5"
+                                       >
+                                          <Printer size={12} className="mr-1 inline" /> Barcode
+                                       </Button>
+                                    </div>
                                  </td>
                               </tr>
                            ))
@@ -533,6 +559,175 @@ export default function AdminInventory() {
                </div>
             </div>
          )}
+
+         {/* DULARA: Printable Barcode & Shelf Price Label Modal */}
+         {showBarcodeModal && barcodeProduct && (
+            <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+               <div className="bg-white border-2 border-black max-w-2xl w-full max-h-[90vh] overflow-y-auto p-8 space-y-6">
+                  <div className="flex justify-between items-start border-b border-black pb-4">
+                     <div>
+                        <div className="flex items-center gap-2">
+                           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Shelf & Inventory Merchandising</span>
+                           <span className="text-[8px] font-bold uppercase bg-black text-white px-2 py-0.5">Dulara</span>
+                        </div>
+                        <h3 className="text-base font-black uppercase tracking-tight mt-1">Print Barcode & Price Labels</h3>
+                        <p className="text-xs text-gray-500 font-mono mt-0.5">{barcodeProduct.name} ({barcodeProduct.sku})</p>
+                     </div>
+                     <button
+                        onClick={() => setShowBarcodeModal(false)}
+                        className="p-1 hover:opacity-50"
+                     >
+                        <X size={20} />
+                     </button>
+                  </div>
+
+                  {/* Print Settings Controls */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-brand-grey p-4 border border-black">
+                     <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-black block mb-1">Variant Size</label>
+                        <select
+                           value={barcodeSize}
+                           onChange={(e) => setBarcodeSize(e.target.value)}
+                           className="w-full p-2 border border-black font-mono text-xs bg-white"
+                        >
+                           <option value="ALL">All Sizes Combined</option>
+                           {(barcodeProduct.variants || []).map(v => (
+                              <option key={v.size} value={v.size}>Size {v.size} (Stock: {v.stock})</option>
+                           ))}
+                        </select>
+                     </div>
+
+                     <div>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-black block mb-1">Number of Label Stickers</label>
+                        <select
+                           value={barcodeCopies}
+                           onChange={(e) => setBarcodeCopies(Number(e.target.value))}
+                           className="w-full p-2 border border-black font-mono text-xs bg-white"
+                        >
+                           <option value={1}>1 Label (Single Item)</option>
+                           <option value={2}>2 Labels</option>
+                           <option value={4}>4 Labels</option>
+                           <option value={6}>6 Labels (Half Sheet)</option>
+                           <option value={8}>8 Labels</option>
+                           <option value={12}>12 Labels (Full Sheet)</option>
+                           <option value={24}>24 Labels (Bulk Intake)</option>
+                        </select>
+                     </div>
+                  </div>
+
+                  {/* Live Barcode Sheet Preview */}
+                  <div>
+                     <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                           Sticker Sheet Preview ({barcodeCopies} {barcodeCopies === 1 ? 'sticker' : 'stickers'})
+                        </span>
+                        <span className="text-[9px] font-mono text-gray-400">Standard 50mm x 30mm label sizing</span>
+                     </div>
+
+                     <div
+                        id="printable-barcode-sheet"
+                        className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-gray-50 border border-black max-h-[360px] overflow-y-auto"
+                     >
+                        {Array.from({ length: barcodeCopies }).map((_, index) => {
+                           const barcodeVal = barcodeProduct.barcode || barcodeProduct.sku || `LUZ-${barcodeProduct._id.slice(-6).toUpperCase()}`;
+                           const priceVal = barcodeProduct.salePrice > 0 ? barcodeProduct.salePrice : barcodeProduct.price;
+
+                           return (
+                              <div
+                                 key={index}
+                                 className="barcode-sticker border-2 border-dashed border-black bg-white p-3 flex flex-col items-center justify-between text-center min-h-[140px] shadow-sm"
+                              >
+                                 <div className="w-full border-b border-black/20 pb-1 mb-1">
+                                    <p className="text-[8px] font-black uppercase tracking-[0.2em] text-black leading-none">LUZZIO</p>
+                                    <p className="text-[9px] font-black uppercase truncate mt-0.5 text-black">{barcodeProduct.name}</p>
+                                    <p className="text-[8px] font-mono font-bold text-gray-600">
+                                       {barcodeSize === 'ALL' ? 'STD FIT' : `SIZE: ${barcodeSize}`} • {barcodeProduct.category?.name || barcodeProduct.category || 'APPAREL'}
+                                    </p>
+                                 </div>
+
+                                 {/* Barcode Lines Visual */}
+                                 <div className="w-full flex flex-col items-center my-1">
+                                    <div className="flex items-center justify-center gap-[2px] h-9 w-full overflow-hidden px-2">
+                                       {Array.from({ length: 34 }).map((_, barIdx) => {
+                                          const isThick = (barIdx * 7) % 3 === 0;
+                                          const isGap = (barIdx * 13) % 5 === 0;
+                                          return (
+                                             <div
+                                                key={barIdx}
+                                                style={{
+                                                   width: isThick ? '3px' : '1.5px',
+                                                   height: '36px',
+                                                   backgroundColor: isGap ? 'transparent' : '#000000'
+                                                }}
+                                             />
+                                          );
+                                       })}
+                                    </div>
+                                    <p className="font-mono text-[9px] font-black tracking-widest text-black mt-1">
+                                       *{barcodeVal}*
+                                    </p>
+                                 </div>
+
+                                 <div className="w-full border-t border-black/20 pt-1 mt-1 flex justify-between items-center text-left">
+                                    <span className="text-[8px] font-mono text-gray-400 uppercase">PRICE:</span>
+                                    <span className="text-[11px] font-black font-mono text-black">
+                                       LKR {priceVal.toLocaleString()}.00
+                                    </span>
+                                 </div>
+                              </div>
+                           );
+                        })}
+                     </div>
+                  </div>
+
+                  {/* Modal Action Buttons */}
+                  <div className="flex gap-4 pt-4 border-t border-black">
+                     <Button
+                        onClick={printBarcodeSheet}
+                        className="flex-1 bg-black text-white text-xs font-black uppercase py-3 flex items-center justify-center gap-2 shadow-sm"
+                     >
+                        <Printer size={14} /> Print Sticker Sheet ({barcodeCopies} Labels)
+                     </Button>
+                     <Button
+                        type="button"
+                        onClick={() => setShowBarcodeModal(false)}
+                        className="bg-brand-grey border border-black text-black text-xs font-black uppercase px-6"
+                     >
+                        Close
+                     </Button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* Embedded Print CSS Rules */}
+         <style>{`
+            @media print {
+               body * {
+                  visibility: hidden !important;
+               }
+               #printable-barcode-sheet, #printable-barcode-sheet * {
+                  visibility: visible !important;
+               }
+               #printable-barcode-sheet {
+                  position: fixed !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100vw !important;
+                  max-height: none !important;
+                  border: none !important;
+                  background: white !important;
+                  padding: 10mm !important;
+                  grid-template-columns: repeat(3, 1fr) !important;
+                  gap: 5mm !important;
+                  z-index: 999999 !important;
+               }
+               .barcode-sticker {
+                  page-break-inside: avoid !important;
+                  border: 1px solid #000000 !important;
+               }
+            }
+         `}</style>
       </div>
    );
 }
