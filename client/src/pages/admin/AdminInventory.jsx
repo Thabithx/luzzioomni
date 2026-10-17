@@ -571,7 +571,12 @@ export default function AdminInventory() {
                            <span className="text-[8px] font-bold uppercase bg-black text-white px-2 py-0.5">Dulara</span>
                         </div>
                         <h3 className="text-base font-black uppercase tracking-tight mt-1">Print Barcode & Price Labels</h3>
-                        <p className="text-xs text-gray-500 font-mono mt-0.5">{barcodeProduct.name} ({barcodeProduct.sku})</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                           <p className="text-xs text-gray-500 font-mono">{barcodeProduct.name} ({barcodeProduct.sku})</p>
+                           <span className="text-[10px] font-mono font-black text-black bg-emerald-100 border border-emerald-600 px-2 py-0.5">
+                              UNIQUE BARCODE: {barcodeProduct.barcode || barcodeProduct.sku || `LUZ-${barcodeProduct._id?.slice(-6).toUpperCase()}`}
+                           </span>
+                        </div>
                      </div>
                      <button
                         onClick={() => setShowBarcodeModal(false)}
@@ -663,8 +668,8 @@ export default function AdminInventory() {
                                           );
                                        })}
                                     </div>
-                                    <p className="font-mono text-[9px] font-black tracking-widest text-black mt-1">
-                                       *{barcodeVal}*
+                                    <p className="font-mono text-[10px] font-black tracking-widest text-black mt-1">
+                                       {barcodeVal}
                                     </p>
                                  </div>
 
