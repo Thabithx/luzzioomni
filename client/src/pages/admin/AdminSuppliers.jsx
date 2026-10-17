@@ -3,23 +3,25 @@
 // Create, edit, and manage supplier profiles for product procurement and purchase order generation.
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, Truck, RefreshCw, X, Phone, Mail, MapPin } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Truck, RefreshCw, X, Phone, Mail, MapPin, Zap, Package, ExternalLink, CheckCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
-
-import { useCustomModal } from '../../context/CustomModalContext';
+import { firstError, isBlank, isEmail, isPhone } from '../../utils/formValidate';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmModal';
 
 export default function AdminSuppliers() {
-   const { showAlert, showConfirm } = useCustomModal();
    const [suppliers, setSuppliers] = useState([]);
    const [loading, setLoading] = useState(false);
    const [search, setSearch] = useState('');
+   const { showToast } = useToast();
+   const confirm = useConfirm();
 
    // Modal State
    const [showModal, setShowModal] = useState(false);
    const [editingSupplier, setEditingSupplier] = useState(null);
-   const [errors, setErrors] = useState({});
    const [formData, setFormData] = useState({
       supplierName: '',
       contactPerson: '',
@@ -30,22 +32,15 @@ export default function AdminSuppliers() {
       status: 'active'
    });
 
-   const SL_PHONE_REGEX = /^0[0-9]{9}$/;
-   const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+   const [supplierMetrics, setSupplierMetrics] = useState({});
 
-   const validateSupplierForm = () => {
-      const errs = {};
-      if (!formData.supplierName || formData.supplierName.trim().length < 3) {
-         errs.supplierName = 'Supplier name must be at least 3 characters.';
-      }
-      if (formData.phone && !SL_PHONE_REGEX.test(formData.phone.trim())) {
-         errs.phone = 'Enter a valid 10-digit Sri Lankan phone number (e.g. 0771234567).';
-      }
-      if (formData.email && !EMAIL_REGEX.test(formData.email.trim())) {
-         errs.email = 'Enter a valid email address.';
-      }
-      return errs;
-   };
+   // THABITH: 1-Click Smart Restock PO Builder State
+   const [showRestockModal, setShowRestockModal] = useState(false);
+   const [restockLoading, setRestockLoading] = useState(false);
+   const [restockGenerating, setRestockGenerating] = useState(false);
+   const [selectedSupplierForRestock, setSelectedSupplierForRestock] = useState(null);
+   const [restockData, setRestockData] = useState(null);
+   const [createdPO, setCreatedPO] = useState(null);
 
    useEffect(() => {
       fetchSuppliers();
@@ -54,8 +49,16 @@ export default function AdminSuppliers() {
    const fetchSuppliers = async () => {
       setLoading(true);
       try {
-         const res = await api.get(`/suppliers?search=${encodeURIComponent(search)}`);
+         const [res, repRes] = await Promise.all([
+            api.get(`/suppliers?search=${encodeURIComponent(search)}`),
+            api.get('/analytics/order-supplier-report')
+         ]);
          setSuppliers(res.data.data || []);
+         const metricsMap = {};
+         (repRes.data.data?.suppliers?.supplierPerformance || []).forEach(sp => {
+            metricsMap[sp.supplierId] = sp;
+         });
+         setSupplierMetrics(metricsMap);
       } catch (err) {
          console.error('Fetch suppliers error:', err);
       } finally {
@@ -64,7 +67,6 @@ export default function AdminSuppliers() {
    };
 
    const openModal = (supplier = null) => {
-      setErrors({});
       if (supplier) {
          setEditingSupplier(supplier);
          setFormData({
@@ -93,42 +95,90 @@ export default function AdminSuppliers() {
 
    const handleSubmit = async (e) => {
       e.preventDefault();
-      const validationErrors = validateSupplierForm();
-      if (Object.keys(validationErrors).length > 0) {
-         setErrors(validationErrors);
+
+      const error = firstError([
+         { condition: isBlank(formData.supplierName) || formData.supplierName.trim().length < 2,
+           message: 'Supplier name is required (at least 2 characters)' },
+         { condition: formData.email && !isEmail(formData.email),
+           message: 'Please enter a valid email address' },
+         { condition: formData.phone && !isPhone(formData.phone),
+           message: 'Please enter a valid phone number (7–20 digits)' },
+      ]);
+
+      if (error) {
+         showToast(error, 'warning');
          return;
       }
-      setErrors({});
+
       try {
          if (editingSupplier) {
             await api.put(`/suppliers/${editingSupplier._id}`, formData);
-            showAlert('Supplier profile updated successfully.', 'Supplier Directory', 'success');
+            showToast('Supplier updated successfully.', 'success');
          } else {
             await api.post('/suppliers', formData);
-            showAlert('New supplier registered successfully.', 'Supplier Directory', 'success');
+            showToast('Supplier added successfully.', 'success');
          }
          setShowModal(false);
          fetchSuppliers();
       } catch (err) {
-         showAlert(err.response?.data?.message || 'Failed to save supplier profile.', 'Supplier Registration Error', 'error');
+         showToast(err.response?.data?.message || 'Failed to save supplier.', 'error');
       }
    };
 
    const handleDelete = async (id) => {
-      showConfirm(
-         'Are you sure you want to permanently remove this supplier profile from the directory?',
-         async () => {
-            try {
-               await api.delete(`/suppliers/${id}`);
-               showAlert('Supplier removed successfully.', 'Supplier Directory', 'success');
-               fetchSuppliers();
-            } catch (err) {
-               showAlert(err.response?.data?.message || 'Failed to delete supplier.', 'Deletion Error', 'error');
-            }
-         },
-         'Confirm Supplier Removal',
-         { confirmText: 'Remove Supplier', type: 'warning' }
-      );
+      const yes = await confirm({
+         title: 'Remove Supplier',
+         message: 'This will permanently remove the supplier profile. Associated purchase orders will remain.',
+         confirmLabel: 'Remove Supplier',
+         danger: true
+      });
+      if (!yes) return;
+      try {
+         await api.delete(`/suppliers/${id}`);
+         fetchSuppliers();
+         showToast('Supplier removed successfully.', 'success');
+      } catch (err) {
+         showToast(err.response?.data?.message || 'Failed to delete supplier.', 'error');
+      }
+   };
+
+   // THABITH: 1-Click Smart Restock Handlers
+   const handleOpenSmartRestock = async (supplier) => {
+      setSelectedSupplierForRestock(supplier);
+      setCreatedPO(null);
+      setShowRestockModal(true);
+      setRestockLoading(true);
+      try {
+         const res = await api.get(`/purchase-orders/smart-restock/${supplier._id}`);
+         setRestockData(res.data.data);
+      } catch (err) {
+         console.error('Failed to load restock suggestions:', err);
+         showToast(err.response?.data?.message || 'Failed to analyze stock replenishment.', 'error');
+         setShowRestockModal(false);
+      } finally {
+         setRestockLoading(false);
+      }
+   };
+
+   const handleConfirmSmartRestock = async () => {
+      if (!selectedSupplierForRestock || !restockData?.suggestions?.length) return;
+      setRestockGenerating(true);
+      try {
+         const res = await api.post(`/purchase-orders/smart-restock/${selectedSupplierForRestock._id}`, {
+            customItems: restockData.suggestions.map(s => ({
+               productId: s.productId,
+               quantity: s.suggestedQuantity,
+               purchasePrice: s.purchasePrice
+            }))
+         });
+         setCreatedPO(res.data.data);
+         showToast(res.data.message || 'Smart Restock PO created!', 'success');
+      } catch (err) {
+         console.error('Failed to generate restock PO:', err);
+         showToast(err.response?.data?.message || 'Failed to create restock PO.', 'error');
+      } finally {
+         setRestockGenerating(false);
+      }
    };
 
    return (
@@ -200,9 +250,44 @@ export default function AdminSuppliers() {
                               "{s.notes}"
                            </p>
                         )}
+
+                        {/* THABITH: Supplier Reliability Scorecard */}
+                        {supplierMetrics[s._id] && (
+                           <div className="bg-brand-grey p-3 border border-black space-y-1.5 font-mono text-[9px]">
+                              <div className="flex justify-between items-center">
+                                 <span className="text-gray-500 font-bold uppercase tracking-wider">Scorecard Grade:</span>
+                                 <span className={`px-2 py-0.5 text-[8px] font-black uppercase border ${
+                                    supplierMetrics[s._id].grade === 'GRADE_A'
+                                       ? 'bg-emerald-100 border-emerald-600 text-emerald-800'
+                                       : supplierMetrics[s._id].grade === 'GRADE_B'
+                                       ? 'bg-blue-100 border-blue-600 text-blue-800'
+                                       : supplierMetrics[s._id].grade === 'GRADE_C'
+                                       ? 'bg-amber-100 border-amber-600 text-amber-800'
+                                       : 'bg-red-100 border-red-600 text-red-800'
+                                 }`}>
+                                    {supplierMetrics[s._id].gradeLabel || 'Grade A'}
+                                 </span>
+                              </div>
+                              <div className="flex justify-between items-center text-gray-600">
+                                 <span>Fulfillment Velocity:</span>
+                                 <span className="font-black text-black">{supplierMetrics[s._id].fulfillmentRate}%</span>
+                              </div>
+                              <div className="flex justify-between items-center text-gray-600">
+                                 <span>Completed POs:</span>
+                                 <span className="font-black text-black">{supplierMetrics[s._id].completedPOs} / {supplierMetrics[s._id].totalPOs} Orders</span>
+                              </div>
+                           </div>
+                        )}
                      </div>
 
                      <div className="pt-4 border-t border-black flex gap-2">
+                        <Button
+                           onClick={() => handleOpenSmartRestock(s)}
+                           className="bg-amber-400 hover:bg-amber-500 text-black border border-black text-[9px] font-black uppercase py-2 px-3 flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                           title="1-Click Smart Restock PO"
+                        >
+                           <Zap size={12} className="fill-black text-black" /> Restock PO
+                        </Button>
                         <Button
                            onClick={() => openModal(s)}
                            className="flex-1 bg-brand-grey border border-black text-black text-[9px] font-black uppercase py-2"
@@ -237,10 +322,10 @@ export default function AdminSuppliers() {
                         <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Company / Supplier Name *</label>
                         <Input
                            type="text"
+                           required
                            value={formData.supplierName}
                            onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
                         />
-                        {errors.supplierName && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.supplierName}</p>}
                      </div>
 
                      <div className="grid grid-cols-2 gap-4">
@@ -256,11 +341,9 @@ export default function AdminSuppliers() {
                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Phone Number</label>
                            <Input
                               type="tel"
-                              placeholder="0771234567"
                               value={formData.phone}
                               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                            />
-                           {errors.phone && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.phone}</p>}
                         </div>
                      </div>
 
@@ -271,7 +354,6 @@ export default function AdminSuppliers() {
                            value={formData.email}
                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         />
-                        {errors.email && <p className="text-red-500 text-[10px] font-bold mt-1">{errors.email}</p>}
                      </div>
 
                      <div>
@@ -314,6 +396,143 @@ export default function AdminSuppliers() {
                         </Button>
                      </div>
                   </form>
+               </div>
+            </div>
+         )}
+
+         {/* THABITH: 1-Click Smart Restock Modal */}
+         {showRestockModal && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+               <div className="bg-white border-2 border-black p-8 max-w-2xl w-full space-y-6 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center border-b border-black pb-4">
+                     <div>
+                        <div className="flex items-center gap-2">
+                           <span className="p-1 bg-amber-400 text-black border border-black">
+                              <Zap size={14} className="fill-black" />
+                           </span>
+                           <h3 className="text-sm font-black uppercase tracking-widest">
+                              1-Click Smart Restock PO Builder
+                           </h3>
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-mono mt-1">
+                           Target Supplier: <strong className="text-black uppercase">{selectedSupplierForRestock?.supplierName}</strong>
+                        </p>
+                     </div>
+                     <button onClick={() => setShowRestockModal(false)}><X size={18} /></button>
+                  </div>
+
+                  {restockLoading ? (
+                     <div className="py-16 text-center text-xs font-black uppercase tracking-widest animate-pulse">
+                        Analyzing Central Stock & Restock Replenishments...
+                     </div>
+                  ) : createdPO ? (
+                     <div className="space-y-6 py-4 text-center">
+                        <div className="w-16 h-16 bg-green-100 border-2 border-green-600 text-green-700 flex items-center justify-center mx-auto">
+                           <CheckCircle size={32} />
+                        </div>
+                        <div>
+                           <h4 className="text-base font-black uppercase">Purchase Order Generated Successfully!</h4>
+                           <p className="text-xs font-mono text-gray-600 mt-1">
+                              PO Number: <span className="font-bold text-black">{createdPO.poNumber}</span>
+                           </p>
+                           <p className="text-xs font-mono text-gray-500">
+                              Valuation: LKR {createdPO.totalCost?.toLocaleString()} &bull; {createdPO.items?.length || 0} line items
+                           </p>
+                        </div>
+                        <div className="flex justify-center gap-4 pt-4 border-t border-black">
+                           <Link
+                              to="/admin/purchase-orders"
+                              className="bg-black text-white text-xs font-black uppercase px-6 py-3 flex items-center gap-2 hover:bg-gray-800"
+                           >
+                              <ExternalLink size={14} /> View in Purchase Orders
+                           </Link>
+                           <Button
+                              onClick={() => setShowRestockModal(false)}
+                              className="bg-brand-grey border border-black text-black text-xs font-black uppercase px-6"
+                           >
+                              Close
+                           </Button>
+                        </div>
+                     </div>
+                  ) : (
+                     <div className="space-y-6">
+                        <div className="p-4 bg-brand-grey border border-black text-xs font-mono flex justify-between items-center">
+                           <div>
+                              <span className="text-gray-500 text-[10px] uppercase block">Suggested Replenishment</span>
+                              <span className="font-black text-base">{restockData?.totalItems || 0} Low-Stock Items Identified</span>
+                           </div>
+                           <div className="text-right">
+                              <span className="text-gray-500 text-[10px] uppercase block">Total Estimated PO Valuation</span>
+                              <span className="font-black text-base text-black">
+                                 LKR {(restockData?.totalEstimatedCost || 0).toLocaleString()}
+                              </span>
+                           </div>
+                        </div>
+
+                        {/* Items Table */}
+                        <div className="border border-black overflow-x-auto">
+                           <table className="w-full text-left border-collapse text-xs font-mono">
+                              <thead>
+                                 <tr className="bg-black text-white text-[9px] font-black uppercase tracking-wider">
+                                    <th className="p-3">Product</th>
+                                    <th className="p-3 text-center">Current Stock</th>
+                                    <th className="p-3 text-center">Threshold</th>
+                                    <th className="p-3 text-center">Suggested PO Qty</th>
+                                    <th className="p-3 text-right">Est. Unit Cost</th>
+                                    <th className="p-3 text-right">Subtotal</th>
+                                 </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                 {(!restockData?.suggestions || restockData.suggestions.length === 0) ? (
+                                    <tr>
+                                       <td colSpan="6" className="p-8 text-center text-gray-400 uppercase font-black">
+                                          All Products Are Currently at Safe Stock Levels
+                                       </td>
+                                    </tr>
+                                 ) : (
+                                    restockData.suggestions.map((item, idx) => (
+                                       <tr key={idx} className="hover:bg-gray-50">
+                                          <td className="p-3 font-sans font-black uppercase">
+                                             {item.name}
+                                             <span className="block text-[9px] font-mono text-gray-500">SKU: {item.sku}</span>
+                                          </td>
+                                          <td className="p-3 text-center font-bold text-red-600 bg-red-50/50">
+                                             {item.currentStock} units
+                                          </td>
+                                          <td className="p-3 text-center text-gray-500">{item.threshold}</td>
+                                          <td className="p-3 text-center font-black bg-amber-50">
+                                             +{item.suggestedQuantity}
+                                          </td>
+                                          <td className="p-3 text-right">LKR {item.purchasePrice?.toLocaleString()}</td>
+                                          <td className="p-3 text-right font-black">
+                                             LKR {item.subtotal?.toLocaleString()}
+                                          </td>
+                                       </tr>
+                                    ))
+                                 )}
+                              </tbody>
+                           </table>
+                        </div>
+
+                        <div className="flex gap-4 pt-4 border-t border-black">
+                           <Button
+                              onClick={handleConfirmSmartRestock}
+                              disabled={restockGenerating || !restockData?.suggestions?.length}
+                              className="flex-1 bg-amber-400 hover:bg-amber-500 text-black border border-black text-xs font-black uppercase py-3 flex items-center justify-center gap-2 shadow-sm"
+                           >
+                              <Zap size={14} className="fill-black text-black" />
+                              {restockGenerating ? 'Generating Purchase Order...' : 'Generate 1-Click Smart Restock PO'}
+                           </Button>
+                           <Button
+                              type="button"
+                              onClick={() => setShowRestockModal(false)}
+                              className="bg-brand-grey border border-black text-black text-xs font-black uppercase px-6"
+                           >
+                              Cancel
+                           </Button>
+                        </div>
+                     </div>
+                  )}
                </div>
             </div>
          )}

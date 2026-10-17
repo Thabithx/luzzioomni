@@ -109,10 +109,38 @@ exports.getOrderSupplierReport = async (req, res) => {
          }
       });
 
-      const supplierPerformance = Object.values(supplierStats).map(s => ({
-         ...s,
-         fulfillmentRate: s.itemsOrdered > 0 ? ((s.itemsReceived / s.itemsOrdered) * 100).toFixed(1) : 100
-      }));
+      const supplierPerformance = Object.values(supplierStats).map(s => {
+         const fulfillmentRate = s.itemsOrdered > 0 ? Number(((s.itemsReceived / s.itemsOrdered) * 100).toFixed(1)) : 100;
+         const completionRate = s.totalPOs > 0 ? Number(((s.completedPOs / s.totalPOs) * 100).toFixed(1)) : 100;
+         const score = Math.min(100, Math.max(0, Math.round(fulfillmentRate * 0.65 + completionRate * 0.35)));
+
+         let grade = 'GRADE_A';
+         let gradeLabel = 'Grade A (Preferred Partner)';
+         let riskLevel = 'LOW';
+         if (score < 50) {
+            grade = 'GRADE_D';
+            gradeLabel = 'Grade D (High Risk / Inconsistent)';
+            riskLevel = 'HIGH';
+         } else if (score < 75) {
+            grade = 'GRADE_C';
+            gradeLabel = 'Grade C (Needs Monitoring)';
+            riskLevel = 'MEDIUM';
+         } else if (score < 90) {
+            grade = 'GRADE_B';
+            gradeLabel = 'Grade B (Reliable Vendor)';
+            riskLevel = 'LOW';
+         }
+
+         return {
+            ...s,
+            fulfillmentRate,
+            completionRate,
+            score,
+            grade,
+            gradeLabel,
+            riskLevel
+         };
+      });
 
       res.status(200).json({
          success: true,
@@ -311,3 +339,148 @@ exports.getConsolidatedReport = async (req, res) => {
       res.status(500).json({ success: false, message: error.message });
    }
 };
+
+// @desc    Get Comprehensive Multi-Sheet Excel Report Data (Sheet 1: Summary, Sheet 2: Inventory, Sheet 3: POS Sales)
+// @route   GET /api/analytics/comprehensive-report
+// @access  Private (Admin / Warehouse / Sales)
+exports.getComprehensiveReport = async (req, res) => {
+   try {
+      const [products, orders] = await Promise.all([
+         Product.find().populate('categories', 'name').lean(),
+         Order.find({ status: { $ne: 'cancelled' } })
+            .populate('createdBy', 'name email')
+            .populate('user', 'name email')
+            .sort({ createdAt: -1 })
+            .lean()
+      ]);
+
+      let totalProducts = products.length;
+      let totalStockUnits = 0;
+      let totalInventoryValue = 0;
+      let lowStockProducts = 0;
+      let outOfStockProducts = 0;
+
+      const inventoryData = products.map(p => {
+         const st = p.stock || 0;
+         totalStockUnits += st;
+         const price = (p.salePrice && p.salePrice > 0) ? p.salePrice : (p.price || 0);
+         const val = st * price;
+         totalInventoryValue += val;
+
+         const threshold = p.lowStockThreshold || 10;
+         let stockStatus = 'IN STOCK';
+         if (st === 0) {
+            outOfStockProducts++;
+            stockStatus = 'OUT OF STOCK';
+         } else if (st <= threshold) {
+            lowStockProducts++;
+            stockStatus = 'LOW STOCK';
+         }
+
+         const catNames = p.categories && p.categories.length > 0 
+            ? p.categories.map(c => c.name).join(', ') 
+            : (p.category ? p.category.name : 'Uncategorized');
+
+         return {
+            sku: p.sku || 'N/A',
+            barcode: p.barcode || 'N/A',
+            name: p.name,
+            category: catNames,
+            price: p.price || 0,
+            salePrice: p.salePrice || 0,
+            stock: st,
+            stockStatus,
+            inventoryValue: val
+         };
+      });
+
+      let totalPOSSales = 0;
+      let numberPOSOrders = 0;
+      let totalItemsSold = 0;
+      let totalDiscounts = 0;
+      let totalTax = 0;
+      const paymentMethodMap = {};
+      const posSalesData = [];
+
+      orders.forEach(o => {
+         const isPOS = o.channel === 'POS' || (o.paymentMethod && o.paymentMethod.toUpperCase().includes('POS')) || o.paymentMethod === 'CASH';
+         const orderTotal = o.totalPrice || 0;
+         const orderDiscount = o.discount || 0;
+         const orderTax = o.tax || 0;
+
+         totalDiscounts += orderDiscount;
+         totalTax += orderTax;
+
+         const pm = o.paymentMethod || 'Other';
+         if (!paymentMethodMap[pm]) {
+            paymentMethodMap[pm] = { totalSales: 0, orderCount: 0 };
+         }
+         paymentMethodMap[pm].totalSales += orderTotal;
+         paymentMethodMap[pm].orderCount += 1;
+
+         if (isPOS) {
+            totalPOSSales += orderTotal;
+            numberPOSOrders += 1;
+         }
+
+         (o.orderItems || []).forEach(item => {
+            totalItemsSold += (item.qty || 1);
+
+            if (isPOS) {
+               const itemTotal = (item.qty || 1) * (item.price || 0);
+               const cashierName = o.createdBy?.name || o.createdBy?.email || 'POS Cashier';
+               const customerName = o.shippingAddress?.firstName
+                  ? `${o.shippingAddress.firstName} ${o.shippingAddress.lastName || ''}`.trim()
+                  : (o.user?.name || o.email || 'Walk-in Client');
+
+               posSalesData.push({
+                  date: o.createdAt ? new Date(o.createdAt).toLocaleString() : 'N/A',
+                  orderNo: o.orderNumber || o._id.toString(),
+                  product: item.name,
+                  sku: item.sku || 'N/A',
+                  size: item.size || 'N/A',
+                  qty: item.qty || 1,
+                  unitPrice: item.price || 0,
+                  discount: orderDiscount > 0 ? (orderDiscount / o.orderItems.length).toFixed(2) : 0,
+                  tax: orderTax > 0 ? (orderTax / o.orderItems.length).toFixed(2) : 0,
+                  total: itemTotal,
+                  paymentMethod: o.paymentMethod,
+                  cashier: cashierName,
+                  customer: customerName
+               });
+            }
+         });
+      });
+
+      const salesByPaymentMethod = Object.keys(paymentMethodMap).map(method => ({
+         method,
+         totalSales: paymentMethodMap[method].totalSales,
+         orderCount: paymentMethodMap[method].orderCount
+      }));
+
+      res.status(200).json({
+         success: true,
+         data: {
+            summaryData: {
+               totalProducts,
+               totalStockUnits,
+               totalInventoryValue,
+               lowStockProducts,
+               outOfStockProducts,
+               totalPOSSales,
+               numberPOSOrders,
+               totalItemsSold,
+               totalDiscounts,
+               totalTax,
+               salesByPaymentMethod
+            },
+            inventoryData,
+            posSalesData
+         }
+      });
+   } catch (error) {
+      console.error('getComprehensiveReport error:', error);
+      res.status(500).json({ success: false, message: error.message });
+   }
+};
+

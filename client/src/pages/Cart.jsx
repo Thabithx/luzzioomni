@@ -3,7 +3,7 @@ import { Button } from '../components/ui/Button';
 import { Trash2, Minus, Plus, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import Meta from '../components/ui/Meta';
-import { KokoWidget } from '../components/ui/KokoWidget';
+
 
 
 export function Cart() {
@@ -140,7 +140,6 @@ export function Cart() {
                         <div className="border-t border-black pt-6 flex justify-between text-lg font-black tracking-tighter">
                            <span>LKR {totalPrice.toLocaleString()}.00</span>
                         </div>
-                        <KokoWidget price={totalPrice} className="pt-4 justify-end" />
                      </div>
 
 

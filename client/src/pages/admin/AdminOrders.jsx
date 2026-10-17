@@ -6,6 +6,8 @@ import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { SRI_LANKA_LOCATIONS } from '../../constants/sl-locations';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmModal';
 
 const STATUS_COLORS = {
    'draft': 'bg-gray-100 text-gray-800 border-gray-200',
@@ -290,6 +292,9 @@ const AdminOrders = () => {
    const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
    const [searchParams] = useSearchParams();
    const { token } = useAuth();
+   const { showToast } = useToast();
+   const confirm = useConfirm();
+
 
    const fetchOrders = async (page = 1) => {
       try {
@@ -329,13 +334,13 @@ const AdminOrders = () => {
       try {
          await api.put(`/orders/${orderId}/tracking`, { trackingNumber });
          fetchOrders(pagination.page);
-         // Optionally update the selected order state to reflect changes without closing modal if needed
          const res = await api.get(`/orders?page=${pagination.page}&limit=20&excludeStatus=draft`);
          const updatedOrder = res.data.data.find(o => o._id === orderId);
          setSelectedOrder(updatedOrder);
+         showToast('Tracking number registered successfully.', 'success');
       } catch (err) {
          console.error('Error updating tracking number:', err);
-         alert('FAILED TO REGISTER TRACKING SEQUENCE.');
+         showToast('Failed to register tracking sequence.', 'error');
       }
    };
 
@@ -344,15 +349,14 @@ const AdminOrders = () => {
          await api.put(`/orders/${orderId}/address`, addressData);
          fetchOrders(pagination.page);
 
-         // Update local selectedOrder to reflect changes immediately
          const res = await api.get(`/orders?page=${pagination.page}&limit=20&excludeStatus=draft`);
          const updatedOrder = res.data.data.find(o => o._id === orderId);
          setSelectedOrder(updatedOrder);
 
-         alert('Address protocol updated successfully.');
+         showToast('Shipping address updated successfully.', 'success');
       } catch (err) {
          console.error('Error updating address:', err);
-         alert('FAILED TO UPDATE REGISTRY: ' + (err.response?.data?.message || err.message));
+         showToast('Failed to update address: ' + (err.response?.data?.message || err.message), 'error');
       }
    };
 
@@ -361,7 +365,6 @@ const AdminOrders = () => {
          const weight = parcelWeights[id] || 1;
 
          if (oldStatus !== 'processing' && status === 'processing') {
-            // Call Fadar API
             try {
                const res = await api.post('/fadar/create-parcel', {
                   orderId: id,
@@ -369,28 +372,21 @@ const AdminOrders = () => {
                   newStatus: status,
                   oldStatus: oldStatus
                });
-               alert(`Fadar Parcel Created: ${res.data.data.fadar_order_id || 'Success'}`);
+               showToast(`Courier parcel created: ${res.data.data.fadar_order_id || 'Success'}`, 'success');
             } catch (fadarErr) {
                const errorMsg = fadarErr.response?.data?.message || 'Fadar API Connection Failed.';
                const apiDetail = fadarErr.response?.data?.error?.message || '';
-               // If error object is passed, try to stringify it if it's an object
                const detailStr = typeof apiDetail === 'object' ? JSON.stringify(apiDetail) : apiDetail;
-
-               const debugInfo = fadarErr.response?.data?.debugParams
-                  ? `\n\n[DEBUG INFO]\nOID: ${fadarErr.response.data.debugParams.order_id}\nCITY: "${fadarErr.response.data.debugParams.recipient_city}"\nAMT: ${fadarErr.response.data.debugParams.amount}\nTEL: ${fadarErr.response.data.debugParams.recipient_contact_1}\nNAME: ${fadarErr.response.data.debugParams.recipient_name}`
-                  : '';
-
-               alert(`COURIER SYNC FAILED: ${errorMsg} ${detailStr ? `(${detailStr})` : ''}${debugInfo}`);
-               return; // Halt status update if courier sync fails
+               showToast(`Courier sync failed: ${errorMsg} ${detailStr ? `(${detailStr})` : ''}`, 'error');
+               return;
             }
          } else {
-            // Normal status update
             await api.put(`/orders/${id}/status`, { status });
          }
          fetchOrders(pagination.page);
       } catch (err) {
          console.error('Error updating order status:', err);
-         alert(err.response?.data?.message || 'Error updating status');
+         showToast(err.response?.data?.message || 'Error updating status.', 'error');
       }
    };
 
@@ -424,8 +420,13 @@ const AdminOrders = () => {
    const handleBulkStatusUpdate = async (status) => {
       if (selectedIds.length === 0) return;
 
-      const confirmMsg = `Update ${selectedIds.length} orders to ${status.toUpperCase()}?`;
-      if (!window.confirm(confirmMsg)) return;
+      const yes = await confirm({
+         title: `Bulk Status Update`,
+         message: `Update ${selectedIds.length} selected orders to "${status.toUpperCase()}"? This will process all selected orders at once.`,
+         confirmLabel: `Update ${selectedIds.length} Orders`,
+         danger: false
+      });
+      if (!yes) return;
 
       try {
          setLoading(true);
@@ -435,12 +436,12 @@ const AdminOrders = () => {
             weights: parcelWeights
          });
 
-         alert(res.data.message || `Successfully updated ${selectedIds.length} orders.`);
+         showToast(res.data.message || `Successfully updated ${selectedIds.length} orders.`, 'success');
          setSelectedIds([]);
          fetchOrders(pagination.page);
       } catch (err) {
          console.error('Error in bulk status update:', err);
-         alert(err.response?.data?.message || 'Failed to update orders in bulk.');
+         showToast(err.response?.data?.message || 'Failed to update orders in bulk.', 'error');
       } finally {
          setLoading(false);
       }

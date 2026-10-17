@@ -7,11 +7,15 @@ const {
    getPurchaseOrders,
    createPurchaseOrder,
    receivePurchaseOrder,
-   updatePOStatus
+   updatePOStatus,
+   getSmartRestockSuggestions,
+   generateSmartRestockPO
 } = require('../controllers/purchaseOrderController');
 
 router.get('/', protect, authorize('admin', 'warehouse'), getPurchaseOrders);
 router.post('/', protect, authorize('admin', 'warehouse'), createPurchaseOrder);
+router.get('/smart-restock/:supplierId', protect, authorize('admin', 'warehouse'), getSmartRestockSuggestions);
+router.post('/smart-restock/:supplierId', protect, authorize('admin', 'warehouse'), generateSmartRestockPO);
 router.post('/:id/receive', protect, authorize('admin', 'warehouse'), receivePurchaseOrder);
 router.put('/:id/status', protect, authorize('admin', 'warehouse'), updatePOStatus);
 

@@ -3,19 +3,22 @@
 // Receiving stock automatically increases central inventory and updates accounting ledgers.
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FileText, CheckCircle, Truck, PackageCheck, RefreshCw, X } from 'lucide-react';
+import { Search, Plus, FileText, CheckCircle, Truck, PackageCheck, RefreshCw, X, FileSpreadsheet } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
-
-import { useCustomModal } from '../../context/CustomModalContext';
+import { firstError, isBlank, isNonNeg, isInt } from '../../utils/formValidate';
+import { useToast } from '../../components/ui/Toast';
+import { exportSupplierPerformanceExcelReport } from '../../utils/excelExporter';
 
 export default function AdminPurchaseOrders() {
-   const { showAlert } = useCustomModal();
+   const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'reports'
    const [pos, setPos] = useState([]);
    const [suppliers, setSuppliers] = useState([]);
    const [products, setProducts] = useState([]);
+   const [reportData, setReportData] = useState(null);
    const [loading, setLoading] = useState(false);
+   const { showToast } = useToast();
 
    // Modal State
    const [showCreateModal, setShowCreateModal] = useState(false);
@@ -34,14 +37,14 @@ export default function AdminPurchaseOrders() {
    const [receiveItems, setReceiveItems] = useState([]);
    const [submitting, setSubmitting] = useState(false);
 
-   // Form Errors
-   const [createErrors, setCreateErrors] = useState({});
-   const [receiveErrors, setReceiveErrors] = useState('');
-
    useEffect(() => {
-      fetchPOs();
-      fetchSuppliersAndProducts();
-   }, []);
+      if (activeTab === 'orders') {
+         fetchPOs();
+         fetchSuppliersAndProducts();
+      } else if (activeTab === 'reports') {
+         fetchSupplierReport();
+      }
+   }, [activeTab]);
 
    const fetchPOs = async () => {
       setLoading(true);
@@ -53,6 +56,28 @@ export default function AdminPurchaseOrders() {
       } finally {
          setLoading(false);
       }
+   };
+
+   const fetchSupplierReport = async () => {
+      setLoading(true);
+      try {
+         const res = await api.get('/analytics/order-supplier-report');
+         setReportData(res.data.data);
+      } catch (err) {
+         console.error('Fetch supplier report error:', err);
+      } finally {
+         setLoading(false);
+      }
+   };
+
+   const exportSupplierExcel = () => {
+      if (!reportData?.suppliers?.supplierPerformance) return;
+      exportSupplierPerformanceExcelReport({
+         supplierData: reportData.suppliers.supplierPerformance,
+         posList: pos,
+         filename: `Luzzio_Supplier_Performance_Report_${new Date().toISOString().slice(0, 10)}.xlsx`
+      });
+      showToast('Supplier Report (.XLSX) exported successfully!', 'success');
    };
 
    const fetchSuppliersAndProducts = async () => {
@@ -86,56 +111,33 @@ export default function AdminPurchaseOrders() {
       setPoForm({ ...poForm, items: updated });
    };
 
-   const validateCreatePO = () => {
-      const errs = {};
-      if (!poForm.supplierId) errs.supplierId = 'Please select a supplier.';
-      if (!poForm.items || poForm.items.length === 0) {
-         errs.items = 'At least one order item is required.';
-      } else {
-         const itemErrs = [];
-         const seenCombos = new Set();
-
-         poForm.items.forEach((item, index) => {
-            const err = {};
-            if (!item.productId) err.productId = 'Select product';
-            const qty = Number(item.quantity);
-            if (isNaN(qty) || qty < 1) err.quantity = 'Qty must be ≥ 1';
-            const cost = Number(item.purchasePrice);
-            if (isNaN(cost) || cost < 0) err.purchasePrice = 'Cost must be ≥ 0';
-
-            if (item.productId) {
-               const comboKey = `${item.productId}-${(item.size || '').toLowerCase()}`;
-               if (seenCombos.has(comboKey)) {
-                  err.duplicate = 'Duplicate product & size combination';
-               } else {
-                  seenCombos.add(comboKey);
-               }
-            }
-
-            if (Object.keys(err).length > 0) {
-               itemErrs[index] = err;
-            }
-         });
-
-         if (itemErrs.length > 0) errs.itemDetails = itemErrs;
-      }
-      return errs;
-   };
-
    const handleCreateSubmit = async (e) => {
       e.preventDefault();
-      const validationErrors = validateCreatePO();
-      if (Object.keys(validationErrors).length > 0) {
-         setCreateErrors(validationErrors);
+
+      // Validate PO form
+      const error = firstError([
+         { condition: isBlank(poForm.supplierId),          message: 'Please select a supplier' },
+         { condition: poForm.items.length === 0,           message: 'Add at least one item to the purchase order' },
+         { condition: poForm.items.some(i => isBlank(i.productId)), message: 'All items must have a product selected' },
+         {
+            condition: poForm.items.some(i => !isInt(i.quantity, 1)),
+            message: 'All item quantities must be whole numbers of at least 1'
+         },
+         {
+            condition: poForm.items.some(i => !isNonNeg(i.purchasePrice)),
+            message: 'Purchase prices cannot be negative'
+         },
+      ]);
+
+      if (error) {
+         showToast(error, 'warning');
          return;
       }
-      setCreateErrors({});
 
       setSubmitting(true);
       try {
          await api.post('/purchase-orders', poForm);
          setShowCreateModal(false);
-         showAlert('Purchase Order issued successfully.', 'Stock Procurement', 'success');
          setPoForm({
             supplierId: '',
             expectedDate: '',
@@ -143,8 +145,9 @@ export default function AdminPurchaseOrders() {
             items: [{ productId: '', size: '', quantity: 1, purchasePrice: 0 }]
          });
          fetchPOs();
+         showToast('Purchase order created successfully.', 'success');
       } catch (err) {
-         showAlert(err.response?.data?.message || 'Failed to create purchase order', 'PO Generation Error', 'error');
+         showToast(err.response?.data?.message || 'Failed to create purchase order.', 'error');
       } finally {
          setSubmitting(false);
       }
@@ -152,7 +155,6 @@ export default function AdminPurchaseOrders() {
 
    const openReceiveModal = (po) => {
       setSelectedPO(po);
-      setReceiveErrors('');
       setReceiveItems(
          po.items.map(item => ({
             productId: item.product._id || item.product,
@@ -160,7 +162,7 @@ export default function AdminPurchaseOrders() {
             name: item.product.name || 'Product',
             orderedQty: item.quantity,
             alreadyReceived: item.receivedQuantity,
-            quantityReceived: Math.max(0, item.quantity - item.receivedQuantity)
+            quantityReceived: item.quantity - item.receivedQuantity
          }))
       );
       setShowReceiveModal(true);
@@ -170,27 +172,6 @@ export default function AdminPurchaseOrders() {
       e.preventDefault();
       if (!selectedPO) return;
 
-      let totalIntake = 0;
-      for (const item of receiveItems) {
-         const qty = Number(item.quantityReceived);
-         const maxAllowed = item.orderedQty - item.alreadyReceived;
-         if (isNaN(qty) || qty < 0) {
-            setReceiveErrors(`Received quantity for ${item.name} cannot be negative.`);
-            return;
-         }
-         if (qty > maxAllowed) {
-            setReceiveErrors(`Received quantity for ${item.name} exceeds remaining ordered items (${maxAllowed}).`);
-            return;
-         }
-         totalIntake += qty;
-      }
-
-      if (totalIntake === 0) {
-         setReceiveErrors('Please enter at least 1 unit to receive into stock inventory.');
-         return;
-      }
-
-      setReceiveErrors('');
       setSubmitting(true);
       try {
          await api.post(`/purchase-orders/${selectedPO._id}/receive`, {
@@ -203,12 +184,14 @@ export default function AdminPurchaseOrders() {
 
          setShowReceiveModal(false);
          fetchPOs();
+         showToast('Stock intake received and inventory updated.', 'success');
       } catch (err) {
-         setReceiveErrors(err.response?.data?.message || 'Stock intake receiving failed');
+         showToast(err.response?.data?.message || 'Stock intake receiving failed.', 'error');
       } finally {
          setSubmitting(false);
       }
    };
+
 
    return (
       <div className="space-y-8">
@@ -218,20 +201,36 @@ export default function AdminPurchaseOrders() {
                <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-400">Stock Procurement</span>
                <h1 className="text-2xl font-black uppercase tracking-tight mt-1">Purchase Orders & Intake</h1>
             </div>
-            <Button
-               onClick={() => {
-                  setCreateErrors({});
-                  setShowCreateModal(true);
-               }}
-               className="bg-white text-black text-xs font-black uppercase tracking-wider px-6 py-3 hover:bg-gray-200"
-            >
-               <Plus size={16} className="mr-2 inline" /> Create Purchase Order
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+               <div className="flex items-center gap-2">
+                  <Button
+                     onClick={() => setActiveTab('orders')}
+                     className={`text-xs font-black uppercase tracking-wider px-4 py-2 ${activeTab === 'orders' ? 'bg-white text-black' : 'bg-transparent text-white border border-white'}`}
+                  >
+                     Active POs
+                  </Button>
+                  <Button
+                     onClick={() => setActiveTab('reports')}
+                     className={`text-xs font-black uppercase tracking-wider px-4 py-2 ${activeTab === 'reports' ? 'bg-white text-black' : 'bg-transparent text-white border border-white'}`}
+                  >
+                     Supplier Performance Reports
+                  </Button>
+               </div>
+               {activeTab === 'orders' && (
+                  <Button
+                     onClick={() => setShowCreateModal(true)}
+                     className="bg-white text-black text-xs font-black uppercase tracking-wider px-4 py-2 hover:bg-gray-200"
+                  >
+                     <Plus size={16} className="mr-1 inline" /> Create PO
+                  </Button>
+               )}
+            </div>
          </div>
 
-         {/* PO List Table */}
-         <div className="bg-white border border-black overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+         {/* Tab Content 1: PO List Table */}
+         {activeTab === 'orders' && (
+            <div className="bg-white border border-black overflow-x-auto">
+               <table className="w-full text-left border-collapse">
                <thead>
                   <tr className="border-b border-black bg-brand-grey text-[9px] font-black uppercase tracking-[0.2em]">
                      <th className="p-4">PO Number</th>
@@ -307,6 +306,134 @@ export default function AdminPurchaseOrders() {
                </tbody>
             </table>
          </div>
+         )}
+
+         {/* Tab Content 2: Supplier Performance & Procurement Reports */}
+         {activeTab === 'reports' && (
+            <div className="space-y-8">
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white border-2 border-black p-6">
+                  <div>
+                     <h3 className="text-lg font-black uppercase tracking-tight">Supplier Performance & Fulfillment Analytics</h3>
+                     <p className="text-xs text-gray-500 mt-1">Vendor reliability, PO fulfillment velocity, spend volume, and item intake metrics</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                     <Button onClick={exportSupplierExcel} className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black uppercase px-5 py-3 flex items-center gap-2 shadow-sm">
+                        <FileSpreadsheet className="w-4 h-4" /> Download Supplier Report (.XLSX)
+                     </Button>
+                  </div>
+               </div>
+
+               {loading ? (
+                  <div className="py-20 text-center text-xs font-black uppercase tracking-widest animate-pulse">
+                     Compiling Supplier Analytics...
+                  </div>
+               ) : reportData?.suppliers ? (
+                  <>
+                     {/* Summary KPI Cards */}
+                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                        <div className="bg-white border-2 border-black p-6">
+                           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Total Active Suppliers</span>
+                           <p className="text-2xl font-black mt-2 font-mono">{reportData.suppliers.totalSuppliers}</p>
+                           <p className="text-[10px] text-gray-400 mt-2">Verified procurement partners</p>
+                        </div>
+
+                        <div className="bg-white border-2 border-black p-6">
+                           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Total POs Issued</span>
+                           <p className="text-2xl font-black mt-2 font-mono text-blue-600">{reportData.suppliers.totalPOs}</p>
+                           <p className="text-[10px] text-gray-400 mt-2">Historical procurement volume</p>
+                        </div>
+
+                        <div className="bg-black text-white border-2 border-black p-6">
+                           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Order Fulfillment Velocity</span>
+                           <p className="text-2xl font-black mt-2 font-mono text-green-400">
+                              {reportData.orders?.orderFulfillmentRate || 100}%
+                           </p>
+                           <p className="text-[10px] text-gray-400 mt-2">Average order completion rate</p>
+                        </div>
+                     </div>
+
+                     {/* THABITH: Supplier Breakdown Table & Reliability Scorecard */}
+                     <div className="bg-white border-2 border-black p-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-black pb-3">
+                           <div>
+                              <div className="flex items-center gap-2">
+                                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Procurement Intelligence</span>
+                                 <span className="text-[8px] font-bold uppercase bg-black text-white px-2 py-0.5">Thabith</span>
+                              </div>
+                              <h4 className="text-sm font-black uppercase tracking-wider mt-0.5">Supplier Reliability Scorecard & Spend Matrix</h4>
+                           </div>
+                           <span className="text-[9px] font-mono text-gray-400">Weighted: 65% Fulfillment Accuracy + 35% PO Completion Velocity</span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                           <table className="w-full text-left text-xs font-mono">
+                              <thead>
+                                 <tr className="border-b border-black bg-gray-50 text-[10px] uppercase font-black">
+                                    <th className="p-3">Supplier Name</th>
+                                    <th className="p-3">Contact</th>
+                                    <th className="p-3">Total POs</th>
+                                    <th className="p-3">Intake (Rec'd / Ordered)</th>
+                                    <th className="p-3">Total Spend (LKR)</th>
+                                    <th className="p-3">Fulfillment</th>
+                                    <th className="p-3 text-right">Reliability Scorecard</th>
+                                 </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                 {(!reportData.suppliers.supplierPerformance || reportData.suppliers.supplierPerformance.length === 0) ? (
+                                    <tr><td colSpan="7" className="p-6 text-center text-gray-400">No supplier performance data</td></tr>
+                                 ) : (
+                                    reportData.suppliers.supplierPerformance.map(s => (
+                                       <tr key={s.supplierId} className="hover:bg-gray-50">
+                                          <td className="p-3 font-bold font-sans">
+                                             <p className="font-black text-xs">{s.supplierName}</p>
+                                             <span className="text-[9px] text-gray-400 font-mono">ID: {String(s.supplierId).slice(-6).toUpperCase()}</span>
+                                          </td>
+                                          <td className="p-3 text-gray-500">
+                                             <p>{s.contactPerson || 'N/A'}</p>
+                                             <p className="text-[9px] text-gray-400">{s.phone || 'No phone'}</p>
+                                          </td>
+                                          <td className="p-3 font-bold">
+                                             <span>{s.totalPOs} POs</span>
+                                             <span className="text-[9px] text-green-700 block">({s.completedPOs} fulfilled)</span>
+                                          </td>
+                                          <td className="p-3">{s.itemsReceived} / {s.itemsOrdered} units</td>
+                                          <td className="p-3 font-bold">LKR {s.totalSpend.toLocaleString()}</td>
+                                          <td className="p-3">
+                                             <span className={`px-2 py-0.5 text-[9px] font-bold ${Number(s.fulfillmentRate) >= 80 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                                                {s.fulfillmentRate}%
+                                             </span>
+                                          </td>
+                                          <td className="p-3 text-right">
+                                             <div className="inline-flex flex-col items-end">
+                                                <div className="flex items-center gap-1.5">
+                                                   <span className={`px-2 py-0.5 text-[9px] font-black uppercase border ${
+                                                      s.grade === 'GRADE_A'
+                                                         ? 'bg-emerald-100 border-emerald-600 text-emerald-800'
+                                                         : s.grade === 'GRADE_B'
+                                                         ? 'bg-blue-100 border-blue-600 text-blue-800'
+                                                         : s.grade === 'GRADE_C'
+                                                         ? 'bg-amber-100 border-amber-600 text-amber-800'
+                                                         : 'bg-red-100 border-red-600 text-red-800'
+                                                   }`}>
+                                                      {s.gradeLabel || `Score: ${s.score || 100}%`}
+                                                   </span>
+                                                </div>
+                                                <span className="text-[9px] font-bold text-gray-400 mt-0.5 font-mono">
+                                                   Rating: {s.score !== undefined ? `${s.score}/100` : '100/100'}
+                                                </span>
+                                             </div>
+                                          </td>
+                                       </tr>
+                                    ))
+                                 )}
+                              </tbody>
+                           </table>
+                        </div>
+                     </div>
+                  </>
+               ) : null}
+            </div>
+         )}
 
          {/* Create PO Modal */}
          {showCreateModal && (
@@ -321,6 +448,7 @@ export default function AdminPurchaseOrders() {
                      <div>
                         <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Select Supplier *</label>
                         <select
+                           required
                            value={poForm.supplierId}
                            onChange={(e) => setPoForm({ ...poForm, supplierId: e.target.value })}
                            className="w-full p-2.5 border border-black font-mono text-xs bg-white"
@@ -330,7 +458,6 @@ export default function AdminPurchaseOrders() {
                               <option key={s._id} value={s._id}>{s.supplierName} ({s.contactPerson || 'N/A'})</option>
                            ))}
                         </select>
-                        {createErrors.supplierId && <p className="text-red-500 text-[10px] font-bold mt-1">{createErrors.supplierId}</p>}
                      </div>
 
                      {/* PO Items */}
@@ -339,74 +466,63 @@ export default function AdminPurchaseOrders() {
                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Order Items *</label>
                            <button type="button" onClick={addPOItem} className="text-xs font-black text-blue-600 hover:underline">+ Add Item</button>
                         </div>
-                        {createErrors.items && <p className="text-red-500 text-[10px] font-bold">{createErrors.items}</p>}
 
-                        {poForm.items.map((item, idx) => {
-                           const itemErr = createErrors.itemDetails && createErrors.itemDetails[idx];
-                           return (
-                              <div key={idx} className="p-3 border border-black bg-brand-grey space-y-2">
-                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <div>
-                                       <select
-                                          value={item.productId}
-                                          onChange={(e) => updatePOItem(idx, 'productId', e.target.value)}
-                                          className="w-full p-2 border border-black font-mono text-xs bg-white"
-                                       >
-                                          <option value="">-- Select Product --</option>
-                                          {products.map(p => (
-                                             <option key={p._id} value={p._id}>{p.name}</option>
-                                          ))}
-                                       </select>
-                                       {itemErr?.productId && <p className="text-red-500 text-[10px] font-bold mt-1">{itemErr.productId}</p>}
-                                    </div>
+                        {poForm.items.map((item, idx) => (
+                           <div key={idx} className="p-3 border border-black bg-brand-grey space-y-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                 <select
+                                    required
+                                    value={item.productId}
+                                    onChange={(e) => updatePOItem(idx, 'productId', e.target.value)}
+                                    className="w-full p-2 border border-black font-mono text-xs bg-white"
+                                 >
+                                    <option value="">-- Select Product --</option>
+                                    {products.map(p => (
+                                       <option key={p._id} value={p._id}>{p.name}</option>
+                                    ))}
+                                 </select>
 
-                                    <div>
-                                       <Input
-                                          type="text"
-                                          placeholder="Size (e.g. S, M, L)"
-                                          value={item.size}
-                                          onChange={(e) => updatePOItem(idx, 'size', e.target.value)}
-                                       />
-                                    </div>
-                                 </div>
-
-                                 <div className="grid grid-cols-3 gap-2">
-                                    <div>
-                                       <label className="text-[8px] font-black uppercase text-gray-500">Quantity (Min 1)</label>
-                                       <Input
-                                          type="number"
-                                          min="1"
-                                          value={item.quantity}
-                                          onChange={(e) => updatePOItem(idx, 'quantity', e.target.value)}
-                                       />
-                                       {itemErr?.quantity && <p className="text-red-500 text-[9px] font-bold mt-0.5">{itemErr.quantity}</p>}
-                                    </div>
-                                    <div>
-                                       <label className="text-[8px] font-black uppercase text-gray-500">Unit Cost (Rs.)</label>
-                                       <Input
-                                          type="number"
-                                          min="0"
-                                          value={item.purchasePrice}
-                                          onChange={(e) => updatePOItem(idx, 'purchasePrice', e.target.value)}
-                                       />
-                                       {itemErr?.purchasePrice && <p className="text-red-500 text-[9px] font-bold mt-0.5">{itemErr.purchasePrice}</p>}
-                                    </div>
-                                    <div className="flex items-end">
-                                       {poForm.items.length > 1 && (
-                                          <button
-                                             type="button"
-                                             onClick={() => removePOItem(idx)}
-                                             className="w-full py-2 text-[10px] font-black uppercase bg-red-100 text-red-600 border border-red-600"
-                                          >
-                                             Remove
-                                          </button>
-                                       )}
-                                    </div>
-                                 </div>
-                                 {itemErr?.duplicate && <p className="text-red-500 text-[10px] font-bold mt-1">{itemErr.duplicate}</p>}
+                                 <Input
+                                    type="text"
+                                    placeholder="Size (e.g. S, M, L)"
+                                    value={item.size}
+                                    onChange={(e) => updatePOItem(idx, 'size', e.target.value)}
+                                 />
                               </div>
-                           );
-                        })}
+
+                              <div className="grid grid-cols-3 gap-2">
+                                 <div>
+                                    <label className="text-[8px] font-black uppercase text-gray-500">Quantity</label>
+                                    <Input
+                                       type="number"
+                                       min="1"
+                                       value={item.quantity}
+                                       onChange={(e) => updatePOItem(idx, 'quantity', e.target.value)}
+                                    />
+                                 </div>
+                                 <div>
+                                    <label className="text-[8px] font-black uppercase text-gray-500">Unit Cost (Rs.)</label>
+                                    <Input
+                                       type="number"
+                                       min="0"
+                                       value={item.purchasePrice}
+                                       onChange={(e) => updatePOItem(idx, 'purchasePrice', e.target.value)}
+                                    />
+                                 </div>
+                                 <div className="flex items-end">
+                                    {poForm.items.length > 1 && (
+                                       <button
+                                          type="button"
+                                          onClick={() => removePOItem(idx)}
+                                          className="w-full py-2 text-[10px] font-black uppercase bg-red-100 text-red-600 border border-red-600"
+                                       >
+                                          Remove
+                                       </button>
+                                    )}
+                                 </div>
+                              </div>
+                           </div>
+                        ))}
                      </div>
 
                      <div className="flex gap-4 pt-4 border-t border-black">
@@ -422,75 +538,40 @@ export default function AdminPurchaseOrders() {
             </div>
          )}
 
-         {/* Receive Stock Modal — Linked Supplier PO to Stock Intake */}
+         {/* Receive Stock Modal */}
          {showReceiveModal && selectedPO && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-               <div className="bg-white border-2 border-black p-8 max-w-xl w-full space-y-6 max-h-[90vh] overflow-y-auto">
-                  <div className="border-b border-black pb-4 flex justify-between items-start">
-                     <div>
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Stock Intake Protocol</span>
-                        <h3 className="text-base font-black uppercase tracking-tight mt-1">Receive PO #{selectedPO.poNumber}</h3>
-                     </div>
-                     <button onClick={() => setShowReceiveModal(false)}><X size={18} /></button>
+               <div className="bg-white border-2 border-black p-8 max-w-lg w-full space-y-6">
+                  <div className="border-b border-black pb-4">
+                     <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Stock Intake Protocol</span>
+                     <h3 className="text-base font-black uppercase tracking-tight mt-1">Receive PO #{selectedPO.poNumber}</h3>
                   </div>
-
-                  {/* Supplier & PO Context Card linking PO to Stock Intake */}
-                  <div className="bg-brand-grey border border-black p-4 space-y-2">
-                     <div className="flex justify-between items-center text-xs font-black uppercase">
-                        <span>Supplier: {selectedPO.supplier?.supplierName || 'N/A'}</span>
-                        <span className="text-[10px] text-gray-500 font-mono">Contact: {selectedPO.supplier?.phone || selectedPO.supplier?.email || 'N/A'}</span>
-                     </div>
-                     <div className="text-[10px] text-gray-600 font-mono flex justify-between border-t border-gray-300 pt-2">
-                        <span>Order Date: {new Date(selectedPO.createdAt).toLocaleDateString()}</span>
-                        <span>Total Cost: Rs. {selectedPO.totalCost?.toLocaleString()}</span>
-                     </div>
-                     <div className="bg-blue-50 border border-blue-400 p-2.5 text-[10px] text-blue-900 font-semibold flex items-center gap-2">
-                        <Truck size={14} className="shrink-0 text-blue-600" />
-                        <span>Receiving these items directly updates <b>Central Inventory stock levels</b> for product variants.</span>
-                     </div>
-                  </div>
-
-                  {receiveErrors && (
-                     <div className="bg-red-50 border border-red-600 text-red-700 text-xs font-bold p-3 uppercase tracking-wider">
-                        {receiveErrors}
-                     </div>
-                  )}
 
                   <form onSubmit={handleReceiveSubmit} className="space-y-4">
                      <div className="space-y-3">
-                        {receiveItems.map((item, idx) => {
-                           const remaining = item.orderedQty - item.alreadyReceived;
-                           const currentIntake = Number(item.quantityReceived) || 0;
-                           return (
-                              <div key={idx} className="p-3 border border-black bg-white space-y-2">
-                                 <div className="flex justify-between items-center">
-                                    <div>
-                                       <p className="text-xs font-black uppercase">{item.name} {item.size ? `[${item.size}]` : ''}</p>
-                                       <p className="text-[9px] text-gray-500 font-mono">Ordered: {item.orderedQty} | Prev Rec'd: {item.alreadyReceived} | Rem: {remaining}</p>
-                                    </div>
-                                    <div className="w-28 text-right">
-                                       <label className="text-[8px] font-black uppercase block text-gray-500 mb-0.5">Rec'd Now</label>
-                                       <input
-                                          type="number"
-                                          min="0"
-                                          max={remaining}
-                                          value={item.quantityReceived}
-                                          onChange={(e) => {
-                                             const updated = [...receiveItems];
-                                             updated[idx].quantityReceived = e.target.value;
-                                             setReceiveItems(updated);
-                                          }}
-                                          className="w-full p-1.5 border border-black font-mono text-xs text-right bg-white"
-                                       />
-                                    </div>
-                                 </div>
-                                 <div className="text-[9px] font-mono text-green-700 bg-green-50 p-1.5 border border-green-200 flex items-center justify-between">
-                                    <span>Stock Intake Link:</span>
-                                    <span className="font-bold">+ {currentIntake} units to Central Inventory</span>
-                                 </div>
+                        {receiveItems.map((item, idx) => (
+                           <div key={idx} className="p-3 border border-black bg-brand-grey flex justify-between items-center">
+                              <div>
+                                 <p className="text-xs font-black uppercase">{item.name} {item.size ? `[${item.size}]` : ''}</p>
+                                 <p className="text-[9px] text-gray-500 font-mono">Ordered: {item.orderedQty} | Prev Rec'd: {item.alreadyReceived}</p>
                               </div>
-                           );
-                        })}
+                              <div className="w-24">
+                                 <label className="text-[8px] font-black uppercase block text-gray-500">Rec'd Now</label>
+                                 <input
+                                    type="number"
+                                    min="0"
+                                    max={item.orderedQty - item.alreadyReceived}
+                                    value={item.quantityReceived}
+                                    onChange={(e) => {
+                                       const updated = [...receiveItems];
+                                       updated[idx].quantityReceived = e.target.value;
+                                       setReceiveItems(updated);
+                                    }}
+                                    className="w-full p-1.5 border border-black font-mono text-xs text-right bg-white"
+                                 />
+                              </div>
+                           </div>
+                        ))}
                      </div>
 
                      <div className="flex gap-4 pt-4 border-t border-black">
@@ -508,4 +589,3 @@ export default function AdminPurchaseOrders() {
       </div>
    );
 }
-

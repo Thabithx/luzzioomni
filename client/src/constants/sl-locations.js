@@ -1,0 +1,23 @@
+export const SRI_LANKA_LOCATIONS = [
+   "Abayapura", "Agalawatta", "Ahungalla", "Akarella", "Akkaraipattu", "Akmeemana", "Akuregoda", "Akuressa", "Alawatura", "Alawwa", "Alubomulla", "Aludeniya", "Aluthgama", "Ambalangoda", "Ambalantota", "Ambatenna", "Ampara", "Anamaduwa", "Angoda", "Angulana", "Anuradhapura", "Aranayaka", "Arrawwala", "Athethgama", "Aththanayala", "Attidiya", "Avissawella",
+   "Badulla", "Bakamoona", "Bakkiella", "Balangoda", "Ballapana", "Bambalapitiya", "Bandaragama", "Bandarawela", "Bangadeniya", "Batapola", "Battaramulla", "Batticaloa", "Beliatta", "Belihuloya", "Belummahara", "Bemmulla", "Bentota", "Beruwala", "Bibile", "Bingiriya", "Biyagama", "Bombuwala", "Boralesgamuwa", "Borella", "Bulathkohupitiya", "Bulathsinhala",
+   "Chankanai", "Chavakachcheri", "Cheddikulam", "Chilaw", "Chunnakam", "Colombo 01", "Colombo 02", "Colombo 03", "Colombo 04", "Colombo 05", "Colombo 06", "Colombo 07", "Colombo 08", "Colombo 09", "Colombo 10", "Colombo 11", "Colombo 12", "Colombo 13", "Colombo 14", "Colombo 15",
+   "Dambulla", "Dankootuwa", "Dapiligoda", "Dehiattakandiya", "Dehiowita", "Dehiwala", "Deltota", "Deraniyagala", "Devinuwara", "Digana", "Dikwella", "Diyatalawa", "Dodangoda", "Dompe", "Dumbara", "Dunagaha",
+   "Eheliyagoda", "Ekala", "Elpitiya", "Embilipitiya", "Eppawala", "Eravur", "Ethul Kotte",
+   "Galagedara", "Galgamuwa", "Galle", "Galnewa", "Gampaha", "Gampola", "Ganemulla", "Gantuna", "Gelioya", "Ginigathena", "Giriulla", "Gonawala", "Gothatuwa",
+   "Habarana", "Hakmana", "Haldummulla", "Hali-Ela", "Hambantota", "Hanwella", "Haputale", "Hasalaka", "Hatton", "Hikkaduwa", "Hingurakgoda", "Hiniduma", "Homagama", "Horana", "Hungama",
+   "Ibbagamuwa", "Imaduwa", "Ingiriya", "Inuvil",
+   "Ja-Ela", "Jaffna", "Jathika Pola",
+   "Kadawatha", "Kaduwela", "Kahawatta", "Kalagedihena", "Kalawana", "Kalmunai", "Kalpitiya", "Kalutara", "Kandana", "Kandapola", "Kandy", "Karapitiya", "Karawanella", "Karinarathna", "Katubedda", "Katugastota", "Katunayake", "Kattankudy", "Kegalle", "Kekirawa", "Kelaniya", "Kesbewa", "Kilinochchi", "Kiribathgoda", "Kirinda", "Kitulgala", "Kochchikade", "Koggala", "Kohuwala", "Kollupitiya", "Kolonnawa", "Kosgoda", "Kotadeniyawa", "Kotagala", "Kothalawala", "Kotmale", "Kotte", "Kuliyapitiya", "Kuruwita", "Kurunegala",
+   "Labuduwa", "Laggala", "Laxapana", "Lunugala", "Lunugamvehera", "Lunuwila",
+   "Mabola", "Madampella", "Madapatha", "Madu", "Madulsima", "Maguruwela", "Mahabage", "Mahagama", "Mahagirilla", "Mahara", "Maharagama", "Mahiyanganaya", "Maheshwary", "Malabe", "Malkaduwawa", "Malwana", "Manager", "Mandapala", "Manduvil", "Manipay", "Mannar", "Maradana", "Maravila", "Matale", "Matara", "Mathugama", "Mau Ara", "Mawanella", "Mawathagama", "Medawachchiya", "Medirigiriya", "Meegoda", "Meethirigala", "Melsiripura", "Minuwangoda", "Mirigama", "Mirissa", "Modara", "Monaragala", "Moratuwa", "Mount Lavinia", "Mullaittivu", "Mulleriyawa", "Myliddy",
+   "Nanu Oya", "Narahenpita", "Narammala", "Nattandiya", "Nawalapitiya", "Navinna", "Nawala", "Negombo", "Nelliady", "Nikaweratiya", "Nilaveli", "Nittambuwa", "Nivithigala", "Nugegoda", "Nuwara Eliya",
+   "Opanayake", "Ottamawady",
+   "Padiyathalawa", "Padukka", "Paiyagala", "Palaviya", "Pallekele", "Pamunugama", "Panadura", "Panchikawatte", "Pannala", "Pannipitiya", "Pasikuda", "Passara", "Pasyala", "Pelawatta", "Peliyagoda", "Peliyagoda Gangaboda", "Pelmadulla", "Peradeniya", "Piliyandala", "Pinnawala", "Pitakotte", "Piyagama", "Point Pedro", "Polgahawela", "Polonnaruwa", "Poojapitiya", "Pugoda", "Pundaluoya", "Pussellawa", "Puttalam", "Puwakpitiya",
+   "Radawadunne", "Ragama", "Rajagiriya", "Rambukkana", "Ranna", "Ratmalana", "Ratnapura", "Rattota", "Ruhunupura",
+   "Samanthurai", "Sapugaskanda", "Seeduwa", "Sigiriya", "Siyamabalanduwa", "Siyane", "Sri Jayawardenepura Kotte",
+   "Talawakele", "Tangalle", "Thalahena", "Thalangama", "Thalawathugoda", "Thambuttegama", "Thihariya", "Thimbirigasyaya", "Tissamaharama", "Trincomalee", "Tulhiriya",
+   "Uda Pussellawa", "Udugama", "Udumulla", "Uduvil", "Ukuwela", "Ulapane", "Ulpotha", "Unawatuna", "Urubokka", "Ussapitiya", "Uswetakeiyawa", "Uva Paranagama",
+   "Vakarai", "Valachchenai", "Valvedditturai", "Vavuniya", "Veyangoda",
+   "Wadduwa", "Waikkal", "Wariyapola", "Warayapola", "Waskaduwa", "Watareka", "Wattala", "Wattegama", "Weligama", "Welikada", "Welimada", "Welisara", "Welivita", "Wellampitiya", "Wellawatta", "Wellawaya", "Wennappuwa", "Werahera", "Weragala"
+];

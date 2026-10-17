@@ -6,6 +6,8 @@ import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { SRI_LANKA_LOCATIONS } from '../../constants/sl-locations';
+import { useToast } from '../../components/ui/Toast';
+import { useConfirm } from '../../components/ui/ConfirmModal';
 
 const STATUS_COLORS = {
    'draft': 'bg-gray-100 text-gray-800 border-gray-200',
@@ -247,6 +249,9 @@ const AdminDraftOrders = () => {
    const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
    const [searchParams] = useSearchParams();
    const { token } = useAuth();
+   const { showToast } = useToast();
+   const confirm = useConfirm();
+
 
    const fetchOrders = async (page = 1) => {
       try {
@@ -288,9 +293,10 @@ const AdminDraftOrders = () => {
          const res = await api.get(`/orders?page=${pagination.page}&limit=20&status=draft`);
          const updatedOrder = res.data.data.find(o => o._id === orderId);
          setSelectedOrder(updatedOrder);
+         showToast('Tracking number registered successfully.', 'success');
       } catch (err) {
          console.error('Error updating tracking number:', err);
-         alert('FAILED TO REGISTER TRACKING SEQUENCE.');
+         showToast('Failed to register tracking sequence.', 'error');
       }
    };
 
@@ -303,10 +309,10 @@ const AdminDraftOrders = () => {
          const updatedOrder = res.data.data.find(o => o._id === orderId);
          setSelectedOrder(updatedOrder);
 
-         alert('Address protocol updated successfully.');
+         showToast('Shipping address updated successfully.', 'success');
       } catch (err) {
          console.error('Error updating address:', err);
-         alert('FAILED TO UPDATE REGISTRY: ' + (err.response?.data?.message || err.message));
+         showToast('Failed to update address: ' + (err.response?.data?.message || err.message), 'error');
       }
    };
 
@@ -314,9 +320,10 @@ const AdminDraftOrders = () => {
       try {
          await api.put(`/orders/${id}/status`, { status });
          fetchOrders(pagination.page);
+         showToast('Order status updated.', 'success');
       } catch (err) {
          console.error('Error updating order status:', err);
-         alert(err.response?.data?.message || 'Error updating status');
+         showToast(err.response?.data?.message || 'Error updating status.', 'error');
       }
    };
 
@@ -350,8 +357,13 @@ const AdminDraftOrders = () => {
    const handleBulkStatusUpdate = async (status) => {
       if (selectedIds.length === 0) return;
 
-      const confirmMsg = `Update ${selectedIds.length} orders to ${status.toUpperCase()}?`;
-      if (!window.confirm(confirmMsg)) return;
+      const yes = await confirm({
+         title: 'Bulk Status Update',
+         message: `Update ${selectedIds.length} selected draft orders to "${status.toUpperCase()}"?`,
+         confirmLabel: `Update ${selectedIds.length} Orders`,
+         danger: false
+      });
+      if (!yes) return;
 
       try {
          setLoading(true);
@@ -360,12 +372,12 @@ const AdminDraftOrders = () => {
             status: status
          });
 
-         alert(`Successfully updated ${selectedIds.length} orders.`);
+         showToast(`Successfully updated ${selectedIds.length} orders.`, 'success');
          setSelectedIds([]);
          fetchOrders(pagination.page);
       } catch (err) {
          console.error('Error in bulk status update:', err);
-         alert(err.response?.data?.message || 'Failed to update orders in bulk.');
+         showToast(err.response?.data?.message || 'Failed to update orders in bulk.', 'error');
       } finally {
          setLoading(false);
       }
